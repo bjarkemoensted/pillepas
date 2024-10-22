@@ -1,6 +1,5 @@
 ### tools for Doing Stuff, i.e. settings values in various inputs (text fields, radio buttons, etc)
 
-from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.remote.webelement import WebElement
 from typing import final, Iterable
@@ -91,23 +90,30 @@ class Gateway:
         gateway_instance["id_of_some_radio_button"] = True
     should both work."""
 
-    def __init__(self, driver: WebDriver, elements_map: dict):
+    def __init__(self, driver: WebDriver, elements_map: dict=None):
+        self.driver = driver
         self.proxies = dict()
-        for key, e in elements_map.items():
-            proxy = make_proxy(driver=driver, e=e)
-            self.proxies[key] = proxy
+        
+        if elements_map is not None:
+            for key, e in elements_map.items():
+                self.add_element(key=key, e=e)
+            #
         #
     
-    def _get_proxy(self, key: str):
+    def add_element(self, key, e: WebElement):
+        proxy = make_proxy(driver=self.driver, e=e)
+        self.proxies[key] = proxy
+
+    def get_proxy(self, key: str):
         proxy = self.proxies[key]
         return proxy
     
     def __getitem__(self, key: str):
-        proxy = self._get_proxy(key=key)
+        proxy = self.get_proxy(key=key)
         res = proxy.get_value()
         return res
 
     def __setitem__(self, key: str, value):
-        proxy = self._get_proxy(key=key)
+        proxy = self.get_proxy(key=key)
         proxy.set_value(value=value)
     #
