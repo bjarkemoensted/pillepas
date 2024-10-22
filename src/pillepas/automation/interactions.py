@@ -1,5 +1,6 @@
 ### tools for Doing Stuff, i.e. settings values in various inputs (text fields, radio buttons, etc)
 
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.remote.webelement import WebElement
 from typing import final, Iterable
@@ -100,9 +101,24 @@ class Gateway:
             #
         #
     
+    def element_available(self, key) -> bool:
+        res = True
+        proxy = self.proxies[key]
+        try:
+            res = isinstance(proxy, RadioProxy) or proxy.e.is_displayed()
+        except StaleElementReferenceException:
+            res = False
+        
+        # TODO fix so we use send_keys to fill text so the next-buttons activate!!!
+        return res
+    
     def add_element(self, key, e: WebElement):
         proxy = make_proxy(driver=self.driver, e=e)
         self.proxies[key] = proxy
+    
+    def get_element(self, key) -> WebElement:
+        proxy = self.proxies[key]
+        return proxy.e
 
     def get_proxy(self, key: str):
         proxy = self.proxies[key]
