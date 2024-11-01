@@ -1,93 +1,116 @@
+from collections import defaultdict
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
+from selenium.webdriver.remote.webelement import WebElement
 from selenium.common.exceptions import StaleElementReferenceException
+import time
 
-from pillepas.automation import base
 from pillepas.automation.interactions import Gateway
 
 
-class Robot:
-    def __init__(self, driver: WebDriver=None, data: dict=None, verbose=False):
+class FormBot:
+    def __init__(
+            self,
+            target_form_data: dict=None,
+            driver: WebDriver=None,
+            verbose=False
+        ):
+
         if driver is None:
             driver = webdriver.Chrome()
-        if data is None:
-            data = dict()
-        
-        self.verbose = verbose
-        self.data = data
-        self.ids = tuple(data.keys())
-        self.recorded = dict()
-        self.first_recorded_values = dict()
-        
-        self.missing = set(self.ids)
         self.driver = driver
-        self.gateway = Gateway(driver=self.driver)
         
-        for id_ in self.ids:
-            e = self.driver.find_element(By.ID, id_)
-            self.gateway.add_element(key=id_, e=e)
-        #
+        if target_form_data is None:
+            target_form_data = dict()
+        self.target_form_data = target_form_data
+        self.not_yet_written = set(self.target_form_data.keys())
+        
+        self.form_id = "formId"
+        self.url = config.url
+        self.verbose = verbose
+        
+        self.recorded = dict()
+        
+        self.form = Gateway(driver=self.driver)
+        self.driver.get(self.url)
+        
+        for name in self.field_names:
+            locator_fun = lambda s=name: self.get_input_elements(name=s)
+            self.form.add_input(key=name, locator=locator_fun)
+        #    
+    
+    def get_form_element(self) -> WebElement:
+        e = self.driver.find_element(By.XPATH, fr"//form")
+        return e
+    
+    def get_input_elements(self, name: str=None):
+        """Returns all elements of the form inputs.
+        If name is provided, returns only input elements with that name."""
+
+        form = self.get_form_element()
+        namepart = "" if name is None else fr"[@Name='{name}']"
+        elems = form.find_elements(By.XPATH, fr".//input{namepart}")
+        return elems
+    
+    @property
+    def field_names(self):
+        """Returns the unique form input field names."""
+
+        seen = set([])
+        names_gen = (e.get_property("name") for e in self.get_input_elements())
+        res = [name for name in names_gen if not (name in seen or seen.add(name))]
+        return res
+    
+    def decline_cookies(self) -> None:
+        self.driver.find_element(By.ID, value="declineButton").click()
     
     def vprint(self, *args, **kwargs):
         if self.verbose:
             print(*args, **kwargs)
-    
-    def available_ids(self):
-        for id_ in self.ids:
-            e = self.gateway.get_element(id_)
-            try:
-                is_available = e.is_enabled()
-                if e.is_displayed():
-                    print(f"{id_} is visible")
-            except StaleElementReferenceException:
-                is_available = False
-            if is_available:
-                yield id_
-            #
         #
     
-    def set_values(self):
-        for id_ in self.available_ids():
-            if id_ in self.missing:
-                value = self.data[id_]
-                if value is None:
-                    continue
-                self.gateway[id_] = value
-                self.missing.remove(id_)
-                self.vprint(f"Set ID {id_} to {value}")
-            #
+    @property
+    def current_values(self):
+        for name in self.field_names:
+            value = self.form[name]
+            yield name, value
         #
-    #
     
-    def record_values(self):
-        for id_ in self.available_ids():
-            value = self.gateway[id_]
+    def record(self):
+        for name, value in self.current_values:
+            self.recorded[name] = value
+        #
+    
+    def write(self):
+        for name, value in self.target_form_data.items():
             
-            # Record initial value if it hasn't been set already
-            first_time = id_ not in self.first_recorded_values
-            if first_time:
-                self.first_recorded_values[id_] = value
             
-            previously_recorded = id_ in self.recorded
-            recorded_changed = previously_recorded and self.recorded[id_] != value
-            
-            initial_changed = self.first_recorded_values[id_] != value
-            record = False
-            if recorded_changed:
-                record = True
-            else:
-                if not previously_recorded and (initial_changed or self.data[id_] is not None):
-                    record = True
-                #
-                
-            if record:
-                self.recorded[id_] = value
-                self.vprint(f"Recorded ID {id_} as {value}")
+            if name in self.not_yet_written and self.form.is_available(name):
+                self.form[name] = value
+                self.not_yet_written.remove(name)
             #
         #
     #
 
 
 if __name__ == '__main__':
-    robot = Robot()
+    from pillepas import config, data_tools
+    
+    from pillepas.automation.interactions import make_proxy
+    
+    d = data_tools.load_data()
+    
+    
+    robot = FormBot(verbose=True, target_form_data=d)
+    robot.decline_cookies()
+    
+    robot.write()
+        
+    keys = ('SelectedPraeperat', 'SelectedPraeperatName')
+    
+    
+    print(d)
+    
+    while True:
+        time.sleep(0.2)
