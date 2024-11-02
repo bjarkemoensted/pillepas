@@ -1,14 +1,19 @@
 ### tools for Doing Stuff, i.e. settings values in various inputs (text fields, radio buttons, etc)
 import abc
 import json
-from selenium.common.exceptions import StaleElementReferenceException
+from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
 from selenium.webdriver import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.remote.webelement import WebElement
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import time
 from typing import Callable, Iterable
+
+
+_default_wait_seconds = 20
 
 
 def _escape(driver: WebDriver):
@@ -44,7 +49,11 @@ class Proxy(abc.ABC):
     
     def is_available(self):
         return self.e.is_enabled() and self.e.is_displayed()
-    #
+    
+    @property
+    def id_(self):
+        id_ = self.e.get_property("id")
+        return id_
 
 
 class TextFill(Proxy):
@@ -59,28 +68,45 @@ class TextFill(Proxy):
 
 
 class AutocompleteField(TextFill):
+    autocomplete_min_chars = 2
+    
+    @property
+    def options_xpath_locator(self):
+        """Locator for any list elements below the element's parent"""
+        res = fr"//*[@id='{self.id_}']/..//li"
+        return res
+    
     def set_value(self, value):
         """Some js validation voodoo is going on here, so incrementally type the value, then look for, and click,
         the target value when it appears in the options."""
 
-        # Options appear at the same level as the input text field, so look for list elements under the input field's parent
-        parent = self.e.find_element(By.XPATH, "./..")
+        WebDriverWait(self.driver, _default_wait_seconds).until(
+            EC.element_to_be_clickable((By.ID, self.id_))
+        )
         
         # Remove whitespace before matching because options are weirdly formatted
         value = str(value)
         target = value.replace(" ", "")
         
-        for char in str(value):
+        for i, char in enumerate(str(value)):
+            wait_time = 1 if i >= self.autocomplete_min_chars - 1 else 0.2
             self.e.send_keys(char)
             
             # Check for suggestions from the options list which match the target value
-            children = parent.find_elements(By.TAG_NAME, "li")
+            try:
+                children = WebDriverWait(self.driver, wait_time).until(
+                    EC.visibility_of_all_elements_located((By.XPATH, self.options_xpath_locator))
+                )
+            except TimeoutException:
+                continue
+            
             matches = [c for c in children if c.text.replace(" ", "") == target]
             
-            # TODO should probably do this instead: https://stackoverflow.com/a/28110129/3752268
             if len(matches) == 1:
-                time.sleep(0.5)
                 hit = matches[0]
+                WebDriverWait(self.driver, _default_wait_seconds).until(
+                    EC.element_to_be_clickable(hit)
+                )
                 hit.click()
                 return
         #
