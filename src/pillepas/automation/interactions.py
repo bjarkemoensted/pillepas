@@ -40,7 +40,7 @@ class Proxy(abc.ABC):
         self.e = e
     
     def get_value(self):
-        res = self.e.get_property("value")
+        res = self.e.get_attribute("value")
         return res
     
     @abc.abstractmethod
@@ -61,9 +61,6 @@ class TextFill(Proxy):
         self.e.send_keys(str(value))
         self.e.send_keys(Keys.TAB)
         _escape(driver=self.driver)
-    
-    def is_available(self):
-        return super().is_available() and self.e.is_displayed()
     #
 
 
@@ -89,7 +86,7 @@ class AutocompleteField(TextFill):
         target = value.replace(" ", "")
         
         for i, char in enumerate(str(value)):
-            wait_time = 1 if i >= self.autocomplete_min_chars - 1 else 0.2
+            wait_time = 0.5 if i >= self.autocomplete_min_chars - 1 else 0.02
             self.e.send_keys(char)
             
             # Check for suggestions from the options list which match the target value
@@ -116,6 +113,30 @@ class AutocompleteField(TextFill):
 class Hidden(Proxy):
     def set_value(self, value):
         set_property_with_js(driver=self.driver, e=self.e, property="value", value=value)
+    #
+    
+    def is_available(self):
+        return self.e.is_enabled()
+    #
+
+
+class Select(Proxy):
+    def set_value(self, value):
+        """Sets value using a dropdown menu"""
+        
+        # Click the element to trigger the dropdown
+        WebDriverWait(self.driver, _default_wait_seconds).until(
+            EC.element_to_be_clickable(self.e)
+        ).click()
+        
+        # Locate and click the option with the correct value
+        option = self.e.find_element(By.XPATH, fr".//option[@value='{value}']")
+        WebDriverWait(self.driver, _default_wait_seconds).until(
+            EC.element_to_be_clickable(option)
+        ).click()
+        
+        # Send escape keystroke because the dropdown doesn't disappear by itself after Selinium clicks
+        self.e.send_keys(Keys.ESCAPE)
     #
 
 
@@ -145,7 +166,12 @@ class Radio(Proxy):
 def make_proxy(driver: WebDriver, elems: Iterable[WebElement]) -> Proxy:
     if len(elems) == 1:
         e = elems[0]
+        
         kwargs = dict(driver=driver, e=e)
+        
+        tag_name = e.tag_name
+        if tag_name == "select":
+            return Select(**kwargs)
         match e.get_property('type'):
             case 'text' | "number":
                 parent = _parent(e)
