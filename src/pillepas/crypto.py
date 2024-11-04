@@ -14,11 +14,6 @@ def _box_from_password(password: bytes):
     return box
 
 
-def _str_to_bytes(s: str) -> bytes:
-    res = bytes(s.encode("utf-8"))
-    return res
-
-
 class Crypt:
     encoding = "utf-8"
     

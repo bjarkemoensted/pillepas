@@ -49,6 +49,9 @@ class Proxy(abc.ABC):
     
     def is_available(self):
         return self.e.is_enabled() and self.e.is_displayed()
+
+    def is_displayed(self):
+        return self.e.is_displayed()
     
     @property
     def id_(self):
@@ -106,6 +109,7 @@ class AutocompleteField(TextFill):
                 )
                 hit.click()
                 return
+            #
         #
     #
 
@@ -159,8 +163,12 @@ class Radio(Proxy):
                 return
             #
         #
+
     def is_available(self):
         return all(e.is_enabled() for e in self.elems)
+
+    def is_displayed(self):
+        return all(e.is_displayed() for e in self.elems)
 
 
 def make_proxy(driver: WebDriver, elems: Iterable[WebElement]) -> Proxy:
@@ -223,6 +231,7 @@ class Gateway:
     def __init__(self, driver: WebDriver):
         self.driver = driver
         self._locators = dict()
+        # TODO cache proxies and check if it runs faster !!!
     
     def add_input(self, key: str, locator: Callable):
         """Registers an input with the given key and element(s)."""

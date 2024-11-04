@@ -1,5 +1,5 @@
-form_id: "FormId"
-fixed:
+constant:  # input fields that can be expected to rarely change between uses
+    - FormId  # Hidden form field containinga form ID. Storing this as it might indicate other changes
     - FirstName
     - LastName
     - Address
@@ -18,38 +18,14 @@ fixed:
     - DoctorsPostalCode
     - DoctorsCity
     - DoctorsPhone
-volatile:
-    - hest
-
-
-# SelectedPraeperat
-# SelectedPraeperatName
-# DailyDosis
-
-
-
-# {
-#     "FormId": "{D36CCF42-5BEE-4F6A-BAEF-0156A16F61D0}",
-#     "SelectedPraeperat": "28106342819",
-#     "SelectedPraeperatName": "Elvanse kapsler, h\u00e5rde                                                                                      , 20 mg",
-#     "DailyDosis": "1",
-
-#     "FirstName": "Bjarke M\u00f8rch",
-#     "LastName": "M\u00f8nsted",
-#     "Address": "Tagensvej 98, 4. th.",
-#     "PostalCode": "2200",
-#     "City": "K\u00f8benhavn N",
-#     "PassportNumber": "209490226",
-#     "BirthDate": "22-03-1987",
-#     "BirthCity": "Hiller\u00f8d",
-#     "Country": "Danish",
-#     "Sex": "M",
-#     "PhoneNumber": "+4522578098",
-#     "Email": "moenstedbjarke@gmail.com",
-#     "DoctorsFirstName": "Vesterbro",
-#     "DoctorsLastName": "Familiel\u00e6ge",
-#     "DoctorsAddress": "Amerikavej 15 C, 1",
-#     "DoctorsPostalCode": "1756",
-#     "DoctorsCity": "K\u00f8benhavn V",
-#     "DoctorsPhone": "+4569141015"
-# }
+volatile:  # Input fields which are expected to change very often
+    - TravelStartDate
+    - TravelEndDate
+    - NumberOfDaysWithMedicin
+medicines:  # Input fields where different sets of values might be stored for each medication
+    - SelectedPraeperat
+    - SelectedPraeperatName
+    - DailyDosis
+pharmacies:
+    - PharmacyName
+    - PharmacyId

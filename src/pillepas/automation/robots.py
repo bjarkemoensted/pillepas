@@ -104,6 +104,19 @@ class FormBot:
             #
         #
     
+    @property
+    def currently_visible(self):
+        res = [fn for fn in self.field_names if self.form.get_proxy(fn).is_displayed()]
+        return res
+    
+    def get_available_form_fields_missing_from_target(self):
+        """Returns a list of the form fields which are currently visible, but are not defined in the
+        robot's target data. If any such fields are present, human action is likely required before
+        proceeding to the next page of a form."""
+
+        missing = [fn for fn in self.currently_visible if fn not in self.target_form_data]
+        return missing
+    
     def record(self):
         for name, value in self.current_values:
             oldval = self.recorded.get(name, "")
@@ -133,14 +146,17 @@ class FormBot:
     
     def loop(self, constant_condition: Callable, try_click_next=False):
         """Loops until the provided callable takes a value different from its initial value.
-        if try_click_next is True, will attempt to click the next-button in each iteration."""
+        if try_click_next is True, will attempt to click the next-button in each iteration (unless
+        there are visible form elements we don't have a value for)."""
 
         # Determine initial value
         const = constant_condition()
         
         while True:
             self.tick()
-            if try_click_next:
+            
+            # If form fields are visible that we don't have a value for, don't click next
+            if try_click_next and not self.get_available_form_fields_missing_from_target():
                 self.click_next()
             
             # Check and break if the value changed
@@ -150,8 +166,7 @@ class FormBot:
                 #
             except:
                 break
-            
-            
+            #
         #
             
     def loop_form_page(self, try_click_next=False):
@@ -173,13 +188,20 @@ if __name__ == '__main__':
     
     from pillepas.automation.interactions import make_proxy
     
-    d = data_tools.load_data()
+    import pathlib
+    import json
+    
+    # TODO date fields give an issue bc of some autocomplete popups thingies. Fix !!!
+    d = json.loads((pathlib.Path(__file__).parent.parent.parent.parent / "deleteme_recorded.json").read_text())
     del d["FormId"]
+    
     
     
     robot = FormBot(verbose=True, target_form_data=d)
     robot.decline_cookies()
     
-    
+    from pprint import pprint
+    pprint(robot.target_form_data)
     robot.loop_form(try_click_next=True)
+    
     
