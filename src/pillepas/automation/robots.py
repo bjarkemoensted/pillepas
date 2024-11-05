@@ -31,15 +31,17 @@ class FormBot:
         self.recorded = dict()
         
         self.form = Gateway(driver=self.driver)
+        self.field_names = []
         
         self.setup()
     
     def setup(self):
         self.driver.get(self.url)
+        self.decline_cookies()
         
-        for name in self.field_names:
-            locator_fun = lambda s=name: self.get_input_elements(name=s)
-            self.form.add_input(key=name, locator=locator_fun)
+        for name, elems in self.get_input_names_and_elements().items():
+            self.field_names.append(name)
+            self.form.add_input(key=name, elems=elems)
         #
 
     @property
@@ -47,24 +49,24 @@ class FormBot:
         e = self.driver.find_element(By.XPATH, fr"//form")
         return e
     
-    def get_input_elements(self, name: str=None):
-        """Returns all elements of the form inputs.
-        If name is provided, returns only input elements with that name."""
-
+    def get_input_names_and_elements(self, name=None) -> dict:
+        """Returns a dict mapping each input name to a list of elements corresponding to that input.
+        We're using a list for consistency, as some input types such as radio buttons might have
+        multiple elements tied to the same input.
+        name is an optional parameter specifying a particular name to search for. By default, all input names
+        are returned, the parameter is mainly used for debugging etc."""
+        
+        res = dict()
         form = self.form_element
+        
+        # Construct an xpath locator for html element tags associated with form inputs
         namepart = "" if name is None else fr"[@Name='{name}']"
         input_tags = ("input", "select", "textarea")
         xpath = " | ".join([fr".//{input_tag}{namepart}" for input_tag in input_tags])
-        elems = form.find_elements(By.XPATH, xpath)
-        return elems
-    
-    @property
-    def field_names(self):
-        """Returns the unique form input field names."""
-
-        seen = set([])
-        names_gen = (e.get_property("name") for e in self.get_input_elements())
-        res = [name for name in names_gen if not (name in seen or seen.add(name))]
+        for elem in form.find_elements(By.XPATH, xpath):
+            name = elem.get_property("name")
+            res[name] = res.get(name, []) + [elem]
+        
         return res
     
     def decline_cookies(self) -> None:
@@ -85,7 +87,7 @@ class FormBot:
     
     def _get_next_prev_buttons(self):
         """Gets the buttons under the form element. The 'next' and 'previous' buttons are among these."""
-        res = self.form_element.find_elements(By.CSS_SELECTOR, r"a[class^='button']")
+        res = self.form_element.find_elements(By.CSS_SELECTOR, r"*[class^='button']")
         return res
     
     def click_next(self):
@@ -106,7 +108,16 @@ class FormBot:
     
     @property
     def currently_visible(self):
-        res = [fn for fn in self.field_names if self.form.get_proxy(fn).is_displayed()]
+        res = []
+        for fn in self.field_names:
+            try:
+                if self.form.get_proxy(fn).is_displayed():
+                    res.append(fn)
+                #
+            except StaleElementReferenceException:
+                pass
+            #
+
         return res
     
     def get_available_form_fields_missing_from_target(self):
@@ -184,6 +195,8 @@ class FormBot:
 
 
 if __name__ == '__main__':
+    import datetime
+    now = datetime.datetime.now()
     from pillepas import config, data_tools
     
     from pillepas.automation.interactions import make_proxy
@@ -191,17 +204,18 @@ if __name__ == '__main__':
     import pathlib
     import json
     
-    # TODO date fields give an issue bc of some autocomplete popups thingies. Fix !!!
     d = json.loads((pathlib.Path(__file__).parent.parent.parent.parent / "deleteme_recorded.json").read_text())
     del d["FormId"]
     
     
     
     robot = FormBot(verbose=True, target_form_data=d)
-    robot.decline_cookies()
+    
     
     from pprint import pprint
     pprint(robot.target_form_data)
     robot.loop_form(try_click_next=True)
     
+    delta = datetime.datetime.now() - now
+    print(delta)
     

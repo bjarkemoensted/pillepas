@@ -61,6 +61,7 @@ class Proxy(abc.ABC):
 
 class TextFill(Proxy):
     def set_value(self, value):
+        self.e.clear()
         self.e.send_keys(str(value))
         self.e.send_keys(Keys.TAB)
         _escape(driver=self.driver)
@@ -230,19 +231,14 @@ class Gateway:
 
     def __init__(self, driver: WebDriver):
         self.driver = driver
-        self._locators = dict()
-        # TODO cache proxies and check if it runs faster !!!
+        self._proxies = dict()
     
-    def add_input(self, key: str, locator: Callable):
+    def add_input(self, key: str, elems: Iterable[WebElement]):
         """Registers an input with the given key and element(s)."""
-        
-        self._locators[key] = locator
+        self._proxies[key] = make_proxy(driver=self.driver, elems=elems)
     
     def get_proxy(self, key: str) -> Proxy:
-        locator = self._locators[key]
-        elems = locator()
-        proxy = make_proxy(driver=self.driver, elems=elems)
-        return proxy
+        return self._proxies[key]
     
     def __getitem__(self, key: str):
         proxy = self.get_proxy(key=key)
