@@ -1,5 +1,5 @@
 constant:  # input fields that can be expected to rarely change between uses
-    - FormId  # Hidden form field containinga form ID. Storing this as it might indicate other changes
+    - FormId  # Hidden form field containing a form ID. Storing this as it might indicate other changes
     - FirstName
     - LastName
     - Address

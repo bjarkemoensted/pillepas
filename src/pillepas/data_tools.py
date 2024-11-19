@@ -1,5 +1,7 @@
 import copy
+import datetime
 import json
+from nacl.exceptions import CryptoError
 import os
 import pathlib
 import platformdirs
@@ -25,7 +27,7 @@ def get_data_path() -> pathlib.Path:
     return res
 
 
-def load_data(path=None, crypt: crypto.Crypt=None):
+def load_data(path: pathlib.Path=None, crypt: crypto.Crypt=None):
     if path is None:
         path = get_data_path()
     
@@ -37,6 +39,45 @@ def load_data(path=None, crypt: crypto.Crypt=None):
 
     res = json.loads(data_json)
     return res
+
+
+def load_example_data():
+    """Loads some example data with the right format, for testing and stuff"""
+    path = config.example_data_file
+    d = load_data(path=path)
+    
+    # Overwrite the travel start and end dates with something in the near future
+    today = datetime.date.today()
+    a = today + datetime.timedelta(days=2)
+    b = a + datetime.timedelta(days=10)
+
+    d['constant']["TravelStartDate"] = a.strftime(config.date_format)
+    d['constant']["TravelEndDate"] = b.strftime(config.date_format)
+    
+    return d
+
+
+def is_encrypted(path: pathlib.Path=None):
+    if path is None:
+        path = get_data_path()
+    
+    try:
+        _ = path.read_text()
+        res = False
+    except UnicodeDecodeError:
+        res = True
+    
+    return res
+
+
+def password_correct(path: pathlib.Path=None, crypt: crypto.Crypt=None):
+    res = True
+    try:
+        _ = load_data(path=path, crypt=crypt)
+    except CryptoError:
+        res = False
+    return res
+    
 
 
 def save_data(data: dict, path=None, crypt: crypto.Crypt=None):
@@ -145,19 +186,11 @@ def update_data(new_data: dict, existing_data: dict=None):
 
 
 if __name__ == '__main__':
+    from pprint import pprint
     recorded = json.loads((pathlib.Path(__file__).parent.parent.parent / "deleteme_recorded.json").read_text())
     
     data = preprocess_for_storage(recorded)
     prepped = update_data(new_data=data, existing_data=None)
     
-    from pprint import pprint
-    
-    here = pathlib.Path(__file__).parent
-    testfile = here / "delemete.json"
-    
-    crypt = crypto.Crypt(password='hunter2')
-    save_data(data=prepped, path=testfile, crypt=crypt)
-    
-    crypt = None
-    loaded = load_data(path=testfile, crypt=crypt)
-    pprint(loaded)
+    d = load_example_data()
+    pprint(d)

@@ -25,6 +25,14 @@ def _parent(e: WebElement):
     return parent
 
 
+def wait_and_click(driver: WebDriver, e: WebElement, wait_seconds=None) -> None:
+    if wait_seconds is None:
+        wait_seconds = _default_wait_seconds
+    
+    WebDriverWait(driver, wait_seconds).until(EC.element_to_be_clickable(e)).click()
+    
+
+
 def set_property_with_js(driver: WebDriver, e: WebElement, property: str, value):
     """Uses a JS snippet to set a property of an element."""
     value_rep = json.dumps(value)

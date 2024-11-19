@@ -1,9 +1,12 @@
+import logging
 import pathlib
 import yaml
 
 _here = pathlib.Path(__file__).parent.resolve()
 form_fields_file = _here / 'form_fields.yaml'
+example_data_file = _here / 'example_data.json'
 
+logger = logging.getLogger('pillepas')
 
 with open(form_fields_file) as f:
     fields = yaml.safe_load(f)

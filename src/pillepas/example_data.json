@@ -1,0 +1,39 @@
+{
+    "constant": {
+        "FormId": "{D36CCF42-5BEE-4F6A-BAEF-0156A16F61D0}",
+        "TravelStartDate": "06-11-2024",
+        "TravelEndDate": "10-11-2024",
+        "NumberOfDaysWithMedicin": "-1",
+        "Sex": "M",
+        "FirstName": "Namey",
+        "LastName": "McNameface",
+        "Address": "some strees",
+        "PostalCode": "1337",
+        "City": "Copenhagen N",
+        "PassportNumber": "122312123",
+        "BirthDate": "22-03-1987",
+        "BirthCity": "Cityville",
+        "Country": "Danish",
+        "PhoneNumber": "+4512345678",
+        "Email": "mail@domain.com",
+        "DoctorsFirstName": "Jimbob",
+        "DoctorsLastName": "Strangelove",
+        "DoctorsAddress": "doc road",
+        "DoctorsPostalCode": "1234",
+        "DoctorsCity": "Copenhagen V",
+        "DoctorsPhone": "+4587654321"
+    },
+    "medicines": [
+        {
+            "SelectedPraeperat": "28106342819",
+            "SelectedPraeperatName": "Elvanse kapsler, h\u00e5rde                                                                                      , 20 mg",
+            "DailyDosis": "1"
+        }
+    ],
+    "pharmacies": [
+        {
+            "PharmacyName": "K\u00f8benhavn Hamlets Apotek",
+            "PharmacyId": "3193"
+        }
+    ]
+}

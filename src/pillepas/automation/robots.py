@@ -5,7 +5,8 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.common.exceptions import StaleElementReferenceException, ElementClickInterceptedException
 from typing import Callable
 
-from pillepas.automation.interactions import Gateway
+from pillepas.automation.interactions import Gateway, wait_and_click
+from pillepas.config import logger, url
 
 
 class FormBot:
@@ -25,7 +26,7 @@ class FormBot:
         self.target_form_data = target_form_data
         self.not_yet_written = set(self.target_form_data.keys())
         
-        self.url = config.url
+        self.url = url
         self.verbose = verbose
         
         self.recorded = dict()
@@ -72,10 +73,10 @@ class FormBot:
     def decline_cookies(self) -> None:
         self.driver.find_element(By.ID, value="declineButton").click()
     
-    def vprint(self, *args, **kwargs):
+    def vprint(self, s: str, **kwargs):
         if self.verbose:
-            print(*args, **kwargs)
-        #
+            print(s, **kwargs)
+        logger.info(s)
     
     @property
     def current_values(self):
@@ -84,6 +85,12 @@ class FormBot:
             value = self.form[name]
             yield name, value
         #
+    
+    def click_final_submit_button(self):
+        """Clicks the submit button. This will cause the form to sent to the selected pharmacy, so use with caution"""
+        fe = self.form_element
+        btn = fe.find_element(By.XPATH, r".//*[contains(@class, 'submit') and contains(@class, 'button')]")
+        wait_and_click(driver=self.driver, e=btn)
     
     def _get_next_prev_buttons(self):
         """Gets the buttons under the form element. The 'next' and 'previous' buttons are among these."""
@@ -191,31 +198,8 @@ class FormBot:
         self.loop(constant_condition=cond, try_click_next=try_click_next)
     
     def wrap_up(self):
-        print(self.recorded)
+        return self.recorded
 
 
 if __name__ == '__main__':
-    import datetime
-    now = datetime.datetime.now()
-    from pillepas import config, data_tools
-    
-    from pillepas.automation.interactions import make_proxy
-    
-    import pathlib
-    import json
-    
-    d = json.loads((pathlib.Path(__file__).parent.parent.parent.parent / "deleteme_recorded.json").read_text())
-    del d["FormId"]
-    
-    
-    
-    robot = FormBot(verbose=True, target_form_data=d)
-    
-    
-    from pprint import pprint
-    pprint(robot.target_form_data)
-    robot.loop_form(try_click_next=True)
-    
-    delta = datetime.datetime.now() - now
-    print(delta)
-    
+    pass
