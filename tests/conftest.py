@@ -4,7 +4,7 @@ import pytest
 import random
 import string
 
-from pillepas import crypto
+from pillepas.data_tools import crypto
 from pillepas import data_tools
 
 _here = pathlib.Path(__file__).parent
