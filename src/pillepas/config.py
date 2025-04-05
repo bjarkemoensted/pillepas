@@ -1,40 +1,25 @@
 import logging
 import pathlib
+import platformdirs
 import yaml
 
 _here = pathlib.Path(__file__).parent.resolve()
-form_fields_file = _here / 'form_fields.yaml'
-example_data_file = _here / 'example_data.json'
-
-logger = logging.getLogger('pillepas')
-
-with open(form_fields_file) as f:
-    fields = yaml.safe_load(f)
 
 
-field2type = {field: type_ for type_, fields in fields.items() for field in fields}
+APPNAME = "pillepas"
+logger = logging.getLogger(APPNAME)
 
+URL = "https://www.apoteket.dk/pillepas"  # TODO FIX!!!
 
-url = "https://www.apoteket.dk/pillepas"
+def _get_config_path():
+    dir_ = platformdirs.user_config_dir(APPNAME)
+    res = pathlib.Path(dir_).expanduser()
+    res.mkdir(parents=True, exist_ok=True)
+    return res
+    
+    
+CONFIG_PATH = _get_config_path()
 
-appname = "pillepas"
-
-config_env_var = 'PILLEPAS_CONFIG_DIR'
-config_data_filename = 'data.json'
-
-date_format = r"%d-%m-%Y"  # dd-mm-yyy because of reasons
-
-# Input fields for sensitive data which we should not save by default unless encryption is used
-sensitive_fields = ("PassportNumber",)
-
-# Special hidden input field which should not be filled out.
-form_id_field = "FormId"
-
-# This maps the input categories where we store multiple values, to the unique id for each
-aggregate_field2id = {
-    "medicines": "SelectedPraeperat",
-    "pharmacies": "PharmacyId"
-}
 
 if __name__ == '__main__':
-    print(fields)
+    pass
