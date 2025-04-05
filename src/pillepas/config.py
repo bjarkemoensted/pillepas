@@ -11,6 +11,7 @@ logger = logging.getLogger(APPNAME)
 
 URL = "https://www.apoteket.dk/pillepas"  # TODO FIX!!!
 
+
 def _get_config_path():
     dir_ = platformdirs.user_config_dir(APPNAME)
     res = pathlib.Path(dir_).expanduser()
