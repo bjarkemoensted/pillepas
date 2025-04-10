@@ -9,7 +9,7 @@ _here = pathlib.Path(__file__).parent.resolve()
 APPNAME = "pillepas"
 logger = logging.getLogger(APPNAME)
 
-URL = "https://www.apoteket.dk/pillepas"  # TODO FIX!!!
+URL = "https://app.apoteket.dk/pillepas/borger/bestilling"
 
 
 def _get_config_path():
@@ -19,8 +19,10 @@ def _get_config_path():
     return res
     
     
-CONFIG_PATH = _get_config_path()
+CONFIG_DIR = _get_config_path()
+CONFIG_FILE = CONFIG_DIR / "settings.json"
 
+DATA_PATH = CONFIG_DIR / "data.json"  # TODO prompt for it and store in the config path
 
 if __name__ == '__main__':
     pass
