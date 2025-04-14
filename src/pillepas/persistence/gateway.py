@@ -2,7 +2,6 @@ from getpass import getpass
 from nacl.exceptions import CryptoError
 from pathlib import Path
 
-from pillepas import config
 from pillepas.persistence.crypto import Cryptor
 from pillepas.persistence.file_handlers import FileHandler, EncryptionFileHandler
 
@@ -91,6 +90,12 @@ class Gateway:
     def __getitem__(self, key):
         res = self._data[key]
         return res
+    
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
     
     def __setitem__(self, key, value):
         self._data[key] = value
