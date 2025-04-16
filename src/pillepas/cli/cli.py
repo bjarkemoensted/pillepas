@@ -1,126 +1,109 @@
-import abc
-from anytree import NodeMixin, RenderTree
-from simple_term_menu import TerminalMenu
-from typing import Callable, Iterable, Optional, Tuple
+from __future__ import annotations
+from typing import Iterable
+
+from pillepas.user_inputs import (
+    select_with_menu,
+    prompt_password,
+    prompt_data_dir
+)
+from pillepas.cli.tree_utils import MenuNode, LeafNode
+from pillepas import config
+from pillepas.crypto import Cryptor
+from pillepas import const
+from pillepas.persistence.gateway import Gateway
 
 
+class GatewayInterface:
+    """Exposes various methods that act on a gateway, some using user inputs."""
 
-class Node(abc.ABC, NodeMixin):
-    """Node class for representing a nested hierarchy of menus.
-    The overarching principle here is that an instance of this class represents a node
-    in a tree of menus.
-    Each node has the responsibility for
-    1) Collecting an input from the user (e.g. selecting a submenu),
-    2) Acting on the input via a callback (e.g. saving an updated configuration to a file), and
-    3) Determine"""
-    
-    def __init__(self, name: str, callback: Callable=None, parent=None, children=None):
-        """name (str) - The name of the node/menu."""
-        self.name = name
-        self._disp = f"{name} ({self.__class__.__name__})"
-        self.callback = callback
-        self._menu_cache_key = None
-        self._menu = None
-        self.parent = parent
-        if children:
-            self.children = children
-        #
-
-    @abc.abstractmethod
-    def get_input(self) -> dict|None:
-        raise NotImplementedError
-    
-    def _children_as_strings(self) -> tuple:
-        res = tuple(map(repr, self.children))
-        return res
-    
-    def escape(self):
-        if self.parent is not None:
-            self.root()
-        #
-    
-    @property
-    def title(self) -> str:
-        c = "*"
-        n_edge = 3
-        space = "  "
-        s = f"{n_edge*c}{space}{self.name}{space}{n_edge*c}"
-        return s
-    
-    @property
-    def menu(self) -> TerminalMenu:
-        entries = self._children_as_strings()
-        if not entries:
-            raise ValueError("Can't produce a menu with no options")
+    def __init__(self, gateway: Gateway):
+        self.gateway = gateway
         
-        needs_recreate = entries != self._menu_cache_key
-        if needs_recreate:
-            self._menu = TerminalMenu(menu_entries=entries, title=self.title, clear_screen=True)
-            self._menu_cache_key = entries
-        
-        return self._menu
+    def prompt_password(self):
+        """Prompts user for password, then updates the gateway's password"""
+        password = prompt_password()
+        cryptor = Cryptor(password=password) if password else None
+        self.gateway.change_cryptor(cryptor=cryptor)
     
-    def __call__(self):
-        data = self.get_input()
-        if data is None:
-            data = dict()
-        
-        if self.callback:
-            self.callback(**data)
-        
-        if self.parent:
-            self.parent()
-    
-    def __repr__(self):
-        return self.name
-    
-    def __str__(self):
-        lines = []
-        for pre, fill, node in RenderTree(self):
-            line = f"{pre}{node._disp}"
-            lines.append(line)
-        
-        res = "\n".join(lines)
-        return res
+    def make_menu_single(self, key: str, options: list|tuple, title: str=None, default_value_selected=None):
+        """Uses a terminal menu to select a value from a list of options.
+        The value is then saved to the specified key in the gateway.
+        If the key is already stored in the gateway, the cursor starts at that value.
+        Otherwise, the cursor starts at default_value_selected if specified."""
 
-
-class MenuNode(Node):
-    def get_input(self):
-        i = self.menu.show()
-        if i is None:
-            return self.escape()
+        if default_value_selected is not None and default_value_selected not in options:
+            raise ValueError(f"Default selection must be among the allowed options")
+        
+        _title = title
+        
+        def prompt_and_set():
+            current = self.gateway.get(key)
+            if current is None:
+                current = default_value_selected
             
-        res = self.children[i]
-        res()
+            title = _title
+            if not title:
+                title = f"Select value for {key}"
+            
+            val = select_with_menu(options=options, title=title, current=current)
+            self.gateway[key] = val
 
-
-class Prompt(Node):
-    def get_input(self):
-        res = input(f"Enter value for {self.name}: ")
-        return res
-
-
-class Session:
+        return prompt_and_set
     
-    def run(self):
-        pass
+    def menu_from_const(self, const: const.Var, title: str=None):
+        return self.make_menu_single(key=const.s, options=const.valid_values, title=title)
+    
+    def change_data_dir(self):
+        new_dir = prompt_data_dir()
+        config._set_data_dir(new_dir)
+        
 
 
-main_menu = MenuNode(name="Main")
-
-
-a = Prompt(name="a", parent=main_menu)
-b = Prompt(name="b", parent=main_menu)
-
-sub_menu = MenuNode(name="Sub menu", parent=main_menu)
-
-c = Prompt(name="c", parent=sub_menu)
-d = Prompt(name="d", parent=sub_menu)
+def build_menu(gateway: Gateway) -> MenuNode:
+    g = GatewayInterface(gateway=gateway)
+    main = MenuNode(name="Main menu")
+    
+    settings = MenuNode(
+        "Settings", parent=main
+    ).add(
+        LeafNode("Change password", action=g.prompt_password)
+    ).add(
+        LeafNode(
+            "Store sensitive data",
+            action=g.menu_from_const(const=const.save_sensitive),
+        )
+    )
+    # .add(
+    #     LeafNode(
+    #         "Change data directory",
+    #         action=
+    #     )
+    # )
+    
+    #data = MenuNode
+    
+    
+    return main
+    
+    
 
 
 if __name__ == '__main__':
-    pass
-    #main_menu()
+    import logging
     
-    print(main_menu)
-    main_menu()
+    from pathlib import Path
+    path = Path("/tmp/deleteme.json")
+    logpath = path.parent / "log.log"
+    logpath.unlink(missing_ok=True)
+    logging.basicConfig(level=logging.DEBUG, filename=str(logpath))
+    
+    gateway = Gateway(path)
+    menu = build_menu(gateway=gateway)
+    try:
+        menu()
+    except:
+        pass
+    finally:
+        print(logpath.read_text())
+    
+    

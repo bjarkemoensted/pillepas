@@ -1,33 +1,16 @@
-from getpass import getpass
-from nacl.exceptions import CryptoError
+import json
 from pathlib import Path
 
-from pillepas.persistence.crypto import Cryptor
-from pillepas.persistence.file_handlers import FileHandler, EncryptionFileHandler
+from pillepas import config
+from pillepas.crypto import Cryptor
+from pillepas.user_inputs import prompt_password
 
 
-ENCRYPTED_EXT = ".encrypted"
+_passthrough = Cryptor(password=None)
 
 
-def _encrypted_path(path: Path) -> Path:
-    """Returns the input path, but with a suffix indicated that the file is encrypted"""
-    res = path.with_suffix(path.suffix+ENCRYPTED_EXT)
-    return res
-
-
-def _prompt_password(prompt: str=None, confirm=False) -> str:
-    """Prompts for a password to use for encryption.
-    prompt: optional string for prompting for the password. Defaults to the getpass default.
-    confirm: Optional bool (default: False) indicating whether the user must confirm their password."""
-
-    kwargs = dict() if prompt is None else dict(prompt=prompt)
-    password = getpass(**kwargs)
-    if confirm:
-        if password and password != getpass("Confirm password: "):
-            raise RuntimeError("First and second attempts differed")
-        #
-    
-    return password
+class CorruptedError(Exception):
+    pass
 
 
 class Gateway:
@@ -39,42 +22,73 @@ class Gateway:
     def __init__(self, path: Path, cryptor: Cryptor=None):
         """path (pathlib.Path) - the path where data are stored
         cryptor (Cryptor, optional) - Cryptor instance which can handle encrypting+decrypting"""
-
-        self._path = path
-        self._cryptor = cryptor
-        self._filehandler = FileHandler() if self._cryptor is None else EncryptionFileHandler(cryptor=self._cryptor)
+            
+        self.path = path
+        self._cryptor = _passthrough if cryptor is None else cryptor
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._data = self.read()
+        self._last_hash = None
+        
+        try:
+            self._data = self.read()
+        except FileNotFoundError:
+            self._data = dict()
+            self.save()
+
     
     def change_cryptor(self, cryptor: Cryptor=None) -> None:
         """Changes the gateway's Cryptor instance.
         The new cryptor can be a different cryptor instance, e.g. when changing a password, or None,
         if disabling encryption."""
         
+        if cryptor is None:
+            cryptor = _passthrough
+
         if not isinstance(cryptor, Cryptor):
             raise TypeError
-        self.wipe()
+        
+        # Set the new cryptor and save data
         self._cryptor = cryptor
         self.save()
     
+    def move_data(self, new_path: Path):
+        new_path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.rename(new_path)
+        self.path = new_path
+    
+    def _json(self) -> str:
+        s = json.dumps(self._data, sort_keys=True, indent=2)
+        return s
+    
     @property
-    def path(self) -> Path:
-        """Path for the stored data. Automatically adds a suffix to denote an encrypted file"""
-        
-        res = _encrypted_path(self._path) if self._cryptor else self._path
-        return res
+    def file_hash(self):
+        raw = self.path.read_bytes()
+        s = self._cryptor.decrypt(raw)
+        return hash(s)
+    
+    @property
+    def data_hash(self):
+        return hash(self._json())
     
     def read(self) -> dict:
         """Reads data from disk"""
-        try:
-            res = self._filehandler.read(self.path)
-        except FileNotFoundError:
-            res = dict()
+        
+        raw = self.path.read_bytes()
+        s = self._cryptor.decrypt(raw)
+        self._last_hash = hash(s)
+        res = json.loads(s)
+        
         return res
 
     def save(self) -> None:
         """Saves the stored data to disk"""
-        self._filehandler.write(self._data, self.path)
+        
+        if self._last_hash and self._last_hash != self.file_hash:
+            raise CorruptedError
+        
+        s = self._json()
+        self._last_hash = hash(s)
+        raw = self._cryptor.encrypt(s)
+        self.path.write_bytes(raw)
     
     def wipe(self):
         """Remove data from disk"""
@@ -105,48 +119,13 @@ class Gateway:
         del self._data[key]
         self.save()
     
+    def __contains__(self, item):
+        return item in self._data
+    
     def __str__(self) -> str:
         data_str = f"{', '.join(f'{k}={repr(v)}' for k, v in self._data.items())}"
         res = f"{self.__class__.__name__}({data_str})"
         return res
-    #
-
-
-def setup_gateway(path: Path, max_password_retries: int|None=3) -> Gateway:
-    """Helper method for interactively setting up a gateway instance for a given path."""
-    
-    plaintext, enc = (p.exists() for p in (path, _encrypted_path(path)))
-    
-    # If we find a plaintext datafile
-    if plaintext:
-        # Throw error if we find both plaintext + encrypted, which shouldn't happen
-        if enc:
-            raise RuntimeError(f"Found both plaintext and encrypted data files for {path}. This should not happen.")
-        
-        # Make unencrypted gateway
-        return Gateway(path=path)
-    elif not any(plaintext, enc):
-        # If no datafile is found, prompt for optional password
-        password = _prompt_password(prompt="Enter password (leave blank for no encryption): ", confirm=True)
-        cryptor = Cryptor(password=password)
-        return Gateway(path=path, cryptor=cryptor)
-    
-    # If there's an encrypted file, repeatedly prompt for password
-    if max_password_retries is None:
-        max_password_retries = float("inf")
-    
-    prompt = None  # Use default prompt the first time
-    n_attempts = 0
-    while n_attempts < max_password_retries:
-        password = _prompt_password(prompt=prompt)
-        cryptor = Cryptor(password=password)
-        try:
-            return Gateway(path=path, cryptor=cryptor)
-        except CryptoError:
-            pass
-        
-        n_attempts += 1
-        prompt = "Invalid password, try again: "
     #
 
 

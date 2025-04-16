@@ -1,0 +1,49 @@
+form_inputs:
+  - name: medication.0.drug
+    label: Medicin
+    category: medicine
+  - name: medication.0.dailyDose
+    label: Daglig dosis i antal enheder
+    category: medicine
+  - name: days-with-medicine
+    label: Antal dage med medicin
+    category: volatile
+  - name: medication.0.doctorInformation.firstName
+    label: Fornavn
+    category: base
+  - name: medication.0.doctorInformation.lastName
+    label: Efternavn
+    category: base
+  - name: medication.0.doctorInformation.address
+    label: Adresse
+    category: base
+  - name: medication.0.doctorInformation.zipCode
+    label: Postnummer
+    category: base
+  - name: medication.0.doctorInformation.city
+    label: By
+    category: base
+  - name: medication.0.doctorInformation.phoneNumber
+    label: Telefon
+    category: base
+  - name: firstName
+    label: Fornavn
+  - name: lastName
+    label: Efternavn
+  - name: address
+    label: Adresse
+  - name: zipCode
+    label: Postnummer
+  - name: city
+    label: By
+  - name: passportNumber
+    label: Pasnummer
+  - name: birthDate
+    label: Fødselsdato
+  - name: birthPlace
+    label: Fødeby
+  - name: nationality
+    label: Nationalitet
+  - name: gender
+    label: Køn
+

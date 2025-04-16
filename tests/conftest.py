@@ -1,7 +1,7 @@
 import pathlib
 import pytest
 
-from pillepas.persistence.crypto import Cryptor
+from pillepas.crypto import Cryptor
 
 _here = pathlib.Path(__file__).parent
 
