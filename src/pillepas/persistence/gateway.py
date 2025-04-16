@@ -47,6 +47,8 @@ class Gateway:
             raise TypeError
         
         # Set the new cryptor and save data
+        self.check_corrupt()
+        self._last_hash = None
         self._cryptor = cryptor
         self.save()
     
@@ -69,6 +71,11 @@ class Gateway:
     def data_hash(self):
         return hash(self._json())
     
+    def check_corrupt(self):
+        if self._last_hash and self._last_hash != self.file_hash:
+            raise CorruptedError
+        #
+
     def read(self) -> dict:
         """Reads data from disk"""
         
@@ -130,4 +137,16 @@ class Gateway:
 
 
 if __name__ == '__main__':
-    pass
+    import tempfile    
+    tempdir = tempfile.TemporaryDirectory()
+    
+    # Make the path instance, add filename if provided, otherwise reference the folder
+    path = Path(tempdir.name) / "data.stuff"
+
+    
+    g = Gateway(path=path, cryptor=Cryptor("1"))
+    other_cryptor = cryptor=Cryptor("2")
+    
+
+    g.change_cryptor(other_cryptor)
+    

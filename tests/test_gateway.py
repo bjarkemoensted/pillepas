@@ -97,10 +97,20 @@ class TestGateway(TestCase):
         
         g2 = Gateway(path=p2)
         self.assertEqual(g._data, g2._data)
-    #
+    
+    def test_change_cryptor(self):
+        g = self.make_gateway()
+        g.set_values(**self.example_data)
+        
+        other_cryptor = make_cryptor(PASS2)
+        g.change_cryptor(other_cryptor)
+
 
 
 class TestGatewayEncryption(TestGateway):
+    
+    def make_gateway(self):
+        return Gateway(path=self.path, cryptor=self.c1)
     
     def setUp(self):
         self.c1 = make_cryptor(PASS1)
@@ -112,7 +122,6 @@ class TestGatewayEncryption(TestGateway):
         
         g = Gateway(path=self.path, cryptor=self.c1)
         g["a"] = 42
-        
         
         self.assertRaises(CryptoError, lambda: Gateway(path=self.path, cryptor=self.c2))
         self.assertRaises(CryptoError, lambda: Gateway(path=self.path))
