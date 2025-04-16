@@ -33,7 +33,7 @@ class Gateway:
         except FileNotFoundError:
             self._data = dict()
             self.save()
-
+        #
     
     def change_cryptor(self, cryptor: Cryptor=None) -> None:
         """Changes the gateway's Cryptor instance.

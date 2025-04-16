@@ -10,7 +10,7 @@ from pillepas.user_inputs import (
 )
 from pillepas.cli.tree_utils import MenuNode, LeafNode
 from pillepas import config
-from pillepas.crypto import Cryptor
+from pillepas.crypto import Cryptor, CryptoError
 from pillepas import const
 from pillepas.persistence.gateway import Gateway
 
@@ -58,7 +58,30 @@ class GatewayInterface:
     def change_data_dir(self):
         new_dir = prompt_data_dir()
         config._set_data_dir(new_dir)
+        self.gateway.move_data(new_dir)
+    #
+
+
+def setup_gateway(path: Path) -> Gateway:
+    if not path.exists():
+        password = prompt_password(f"Enter password (leave blank to not encrypt): ", confirm=True)
+        c = Cryptor(password)
+        return Gateway(path=path, cryptor=c)
+    
+    c = Cryptor(password=None)
+    prompt = f"{path} is encrypted - enter password: "
+    
+    while True:
+        try:
+            res = Gateway(path=path, cryptor=c)
+            return res
+        except CryptoError:
+            pass
         
+        password = prompt_password(prompt=prompt)
+        c = Cryptor(password=password)
+        prompt = f"Invalid password, try again: "
+    #
 
 
 def build_menu(gateway: Gateway) -> MenuNode:
@@ -74,13 +97,12 @@ def build_menu(gateway: Gateway) -> MenuNode:
             "Store sensitive data",
             action=g.menu_from_const(const=const.save_sensitive),
         )
+    ).add(
+        LeafNode(
+            "Change data directory",
+            action=g.change_data_dir
+        )
     )
-    # .add(
-    #     LeafNode(
-    #         "Change data directory",
-    #         action=
-    #     )
-    # )
     
     #data = MenuNode
     
@@ -95,11 +117,15 @@ if __name__ == '__main__':
     
     from pathlib import Path
     path = Path("/tmp/deleteme.json")
+
     logpath = path.parent / "log.log"
     logpath.unlink(missing_ok=True)
     logging.basicConfig(level=logging.DEBUG, filename=str(logpath))
     
-    gateway = Gateway(path)
+    
+    gateway = setup_gateway(path)
+    print(gateway)
+    
     menu = build_menu(gateway=gateway)
     try:
         menu()
