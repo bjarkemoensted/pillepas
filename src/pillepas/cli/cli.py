@@ -1,5 +1,7 @@
 from __future__ import annotations
 import logging
+
+from pillepas.persistence.setup_gateway import setup_gateway
 logger = logging.getLogger(__name__)
 from typing import Iterable
 
@@ -10,7 +12,7 @@ from pillepas.user_inputs import (
 )
 from pillepas.cli.tree_utils import MenuNode, LeafNode
 from pillepas import config
-from pillepas.crypto import Cryptor, CryptoError
+from pillepas.crypto import Cryptor
 from pillepas import const
 from pillepas.persistence.gateway import Gateway
 
@@ -66,28 +68,6 @@ class GatewayInterface:
         new_path = config.determine_data_file()
         logger.debug(f"Updated data dir in config: {new_path}")
         self.gateway.move_data(new_path)
-    #
-
-
-def setup_gateway(path: Path) -> Gateway:
-    if not path.exists():
-        password = prompt_password(f"Enter password (leave blank to not encrypt): ", confirm=True)
-        c = Cryptor(password)
-        return Gateway(path=path, cryptor=c)
-    
-    c = Cryptor(password=None)
-    prompt = f"{path} is encrypted - enter password: "
-    
-    while True:
-        try:
-            res = Gateway(path=path, cryptor=c)
-            return res
-        except CryptoError:
-            pass
-        
-        password = prompt_password(prompt=prompt)
-        c = Cryptor(password=password)
-        prompt = f"Invalid password, try again: "
     #
 
 

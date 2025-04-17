@@ -6,7 +6,7 @@ from unittest import TestCase
 from pillepas import config
 
 
-class TestGateway(TestCase):
+class TestFileUtils(TestCase):
     def setUp(self):
         self.path_strings = [
             "~",
