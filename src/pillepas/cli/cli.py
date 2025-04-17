@@ -1,7 +1,6 @@
 from __future__ import annotations
 import logging
 
-from pillepas.persistence.setup_gateway import setup_gateway
 logger = logging.getLogger(__name__)
 from typing import Iterable
 
@@ -12,23 +11,26 @@ from pillepas.user_inputs import (
 )
 from pillepas.cli.tree_utils import MenuNode, LeafNode
 from pillepas import config
-from pillepas.crypto import Cryptor
-from pillepas import const
-from pillepas.persistence.data import FIELDS
+from pillepas.crypto import Cryptor, CryptoError
+from pillepas.persistence import data
 from pillepas.persistence.gateway import Gateway
 
 
-class GatewayInterface:
+class GatewayInterface(Gateway):
     """Exposes various methods that act on a gateway, some using user inputs."""
 
-    def __init__(self, gateway: Gateway):
-        self.gateway = gateway
+    def __init__(self, path: Path, cryptor: Cryptor=None):
+        super().__init__(path=path, cryptor=cryptor)
+        missing_keys = filter(lambda k: k not in self, (field.key for field in data.FIELDS))
+        
+        d = {k: None for k in missing_keys}
+        self.set_values(**d)
         
     def prompt_password(self):
         """Prompts user for password, then updates the gateway's password"""
         password = prompt_password()
         cryptor = Cryptor(password=password) if password else None
-        self.gateway.change_cryptor(cryptor=cryptor)
+        self.change_cryptor(cryptor=cryptor)
     
     def make_menu_single(self, key: str, options: list|tuple, title: str=None, default_value_selected=None):
         """Uses a terminal menu to select a value from a list of options.
@@ -42,7 +44,7 @@ class GatewayInterface:
         _title = title
         
         def prompt_and_set():
-            current = self.gateway.get(key)
+            current = self.get(key)
             if current is None:
                 current = default_value_selected
             
@@ -51,12 +53,13 @@ class GatewayInterface:
                 title = f"Select value for {key}"
             
             val = select_with_menu(options=options, title=title, current=current)
-            self.gateway[key] = val
+            self[key] = val
 
         return prompt_and_set
     
-    def menu_from_const(self, const: const.Var, title: str=None):
-        return self.make_menu_single(key=const.s, options=const.valid_values, title=title)
+    def choose_parameter(self, parameter_name: str, title: str=None):
+        parameter = data.FIELDS[parameter_name]
+        return self.make_menu_single(key=parameter.key, options=parameter.valid_values, title=title)
     
     def change_data_dir(self):
         current = config.determine_data_file().parent
@@ -68,12 +71,35 @@ class GatewayInterface:
         config.set_data_file(new_dir)
         new_path = config.determine_data_file()
         logger.debug(f"Updated data dir in config: {new_path}")
-        self.gateway.move_data(new_path)
+        self.move_data(new_path)
     #
 
+    @classmethod
+    def create_with_prompt(cls) -> GatewayInterface:
+        path = config.determine_data_file()
+        if not path.exists():
+            password = prompt_password(f"Enter password (leave blank to not encrypt): ", confirm=True)
+            c = Cryptor(password)
+            return cls(path=path, cryptor=c)
 
-def build_menu(gateway: Gateway) -> MenuNode:
-    g = GatewayInterface(gateway=gateway)
+        c = Cryptor(password=None)
+        prompt = f"{path} is encrypted - enter password: "
+
+        while True:
+            try:
+                res = cls(path=path, cryptor=c)
+                return res
+            except CryptoError:
+                pass
+
+            password = prompt_password(prompt=prompt)
+            c = Cryptor(password=password)
+            prompt = f"Invalid password, try again: "
+        #
+
+
+def build_menu() -> MenuNode:
+    g = GatewayInterface.create_with_prompt()
     main = MenuNode(name="Main menu")
     
     settings = MenuNode(
@@ -83,7 +109,7 @@ def build_menu(gateway: Gateway) -> MenuNode:
     ).add(
         LeafNode(
             "Store sensitive data",
-            action=g.menu_from_const(const=const.save_sensitive),
+            action=g.choose_parameter("save_sensitive"),
         )
     ).add(
         LeafNode(
@@ -92,7 +118,7 @@ def build_menu(gateway: Gateway) -> MenuNode:
         )
     )
     
-    data = MenuNode(
+    data_menu = MenuNode(
         "Data"
     )
     
@@ -111,12 +137,8 @@ if __name__ == '__main__':
     logpath = path.parent / "log.log"
     logpath.unlink(missing_ok=True)
     logging.basicConfig(level=logging.DEBUG, filename=str(logpath))
-    
-    
-    gateway = setup_gateway(path)
-    print(gateway)
-    
-    menu = build_menu(gateway=gateway)
+
+    menu = build_menu()
     try:
         menu()
     except:

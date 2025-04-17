@@ -8,6 +8,7 @@ from pillepas import config
 @dataclasses.dataclass
 class FieldBase:
     key: str
+    label: str
     
     def matches(self, **kwargs) -> bool:
         """Determine whether the field matches input criteriea.
@@ -47,7 +48,6 @@ class FieldBase:
 class FormField(FieldBase):
     category: str
     name: str
-    label: str
     tags: list = dataclasses.field(default_factory=list)
 
 
@@ -75,7 +75,7 @@ def _iter_form_fields():
 
 # Parameters determining behavior
 PARAMETERS = (
-    Parameter("save_sensitive", valid_values=[True, False]),
+    Parameter("save_sensitive", label="Save sensitive data", valid_values=[True, False]),
 )
 
 
@@ -134,6 +134,9 @@ class FieldContainer:
     def __iter__(self):
         return iter(self.contents.values())
     #
+
+    def __getitem__(self, key):
+        return self.contents[key]
 
     @classmethod
     def create(cls) -> FieldContainer:
