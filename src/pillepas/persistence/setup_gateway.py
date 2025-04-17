@@ -1,9 +1,13 @@
 from pathlib import Path
 
+from pillepas import config
 from pillepas.crypto import CryptoError, Cryptor
 from pillepas.persistence.gateway import Gateway
-from pillepas.persistence.data import form_fields
+from pillepas.persistence.data import FieldContainer
 from pillepas.user_inputs import prompt_password
+
+
+fields = FieldContainer.create()
 
 
 def _create(path: Path):
@@ -28,12 +32,18 @@ def _create(path: Path):
     #
 
 
+def setup_gateway(path: Path=None) -> Gateway:
+    if path is None:
+        path = config.determine_data_file()
 
-
-def setup_gateway(path: Path) -> Gateway:
     gateway = _create(path=path)
-    missing = filter(lambda k: k not in gateway, (field.key for field in form_fields))
+    missing_keys = filter(lambda k: k not in gateway, (field.key for field in fields))
     
-    d = {k: None for k in missing}
+    d = {k: None for k in missing_keys}
     gateway.set_values(**d)
     
+    return gateway
+
+
+if __name__ == '__main__':
+    g = setup_gateway()

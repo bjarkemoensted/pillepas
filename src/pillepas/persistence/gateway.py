@@ -73,7 +73,7 @@ class Gateway:
     
     def check_corrupt(self):
         if self._last_hash and self._last_hash != self.file_hash:
-            raise CorruptedError
+            raise CorruptedError(f"File has been modified - might happen if running multiple processes at once?")
         #
 
     def read(self) -> dict:
@@ -88,10 +88,9 @@ class Gateway:
 
     def save(self) -> None:
         """Saves the stored data to disk"""
-        
-        if self._last_hash and self._last_hash != self.file_hash:
-            raise CorruptedError
-        
+
+        self.check_corrupt()
+
         s = self._json()
         self._last_hash = hash(s)
         raw = self._cryptor.encrypt(s)

@@ -14,6 +14,7 @@ from pillepas.cli.tree_utils import MenuNode, LeafNode
 from pillepas import config
 from pillepas.crypto import Cryptor
 from pillepas import const
+from pillepas.persistence.data import FIELDS
 from pillepas.persistence.gateway import Gateway
 
 
