@@ -110,13 +110,16 @@ def prompt_password(prompt: str=None, confirm=False) -> str:
     #
 
 
-def prompt_data_dir() -> Path:
+def prompt_directory(msg: str=None) -> Path:
     """Prompts for a new location for data storage. Asks whether to create if missing."""
     
+    if not msg:
+        msg = "Enter path: "
+
     def validator(s):
         """Validator for data directory"""
         
-        p = Path(s.strip())
+        p = config._path_from_str(s)
         # Force input without a file extension
         if p.suffixes:
             print("Enter path to a folder, not a file")
@@ -128,16 +131,18 @@ def prompt_data_dir() -> Path:
         
         # Otherwise, ask if we should create it. Input is good iff yes
         msg = f"Path {p} does not exist - create it?"
-        do_it = _prompt_yes_no(base_prompt=msg)
+        do_it = _prompt_yes_no(base_prompt=msg, default=True)
         
         if do_it:
             p.mkdir(parents=False, exist_ok=False)
         return do_it
     
-    current = config._get_data_path().parent
-    msg = f"Enter new folder for storing data (currently using {current})"
     res = get_input(msg=msg, validator=validator)
     if res:
-        res = Path(res)
+        res = config._path_from_str(res)
     
     return res
+
+
+if __name__ == '__main__':
+    prompt_directory()

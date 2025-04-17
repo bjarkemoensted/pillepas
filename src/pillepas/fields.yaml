@@ -1,49 +1,63 @@
-form_inputs:
-  - name: medication.0.drug
+medicine:
+  - key: drug
+    name: medication.0.drug
     label: Medicin
-    category: medicine
-  - name: medication.0.dailyDose
+    tags: append
+  - key: daily_dose
+    name: medication.0.dailyDose
     label: Daglig dosis i antal enheder
-    category: medicine
-  - name: days-with-medicine
+    tags: append
+volatile:
+  - key: days_with_medicine
+    name: days-with-medicine
     label: Antal dage med medicin
-    category: volatile
-  - name: medication.0.doctorInformation.firstName
+base:
+  - key: doctor_first_name
+    name: medication.0.doctorInformation.firstName
     label: Fornavn
-    category: base
-  - name: medication.0.doctorInformation.lastName
+  - key: doctor_last_name 
+    name: medication.0.doctorInformation.lastName
     label: Efternavn
-    category: base
-  - name: medication.0.doctorInformation.address
+  - key: doctor_street_address
+    name: medication.0.doctorInformation.address
     label: Adresse
-    category: base
-  - name: medication.0.doctorInformation.zipCode
+  - key: doctor_zip_code
+    name: medication.0.doctorInformation.zipCode
     label: Postnummer
-    category: base
-  - name: medication.0.doctorInformation.city
+  - key: doctor_city 
+    name: medication.0.doctorInformation.city
     label: By
-    category: base
-  - name: medication.0.doctorInformation.phoneNumber
+  - key:  doctor_phone_number
+    name: medication.0.doctorInformation.phoneNumber
     label: Telefon
-    category: base
-  - name: firstName
+  - key: user_first_name
+    name: firstName
     label: Fornavn
-  - name: lastName
+  - key: user_last_name
+    name: lastName
     label: Efternavn
-  - name: address
+  - key:  user_street_address
+    name: address
     label: Adresse
-  - name: zipCode
+  - key: user_zip_code
+    name: zipCode
     label: Postnummer
-  - name: city
+  - key: user_city
+    name: city
     label: By
-  - name: passportNumber
+  - key: user_passport_number
+    name: passportNumber
     label: Pasnummer
-  - name: birthDate
+  - key: user_birth_date
+    name: birthDate
     label: Fødselsdato
-  - name: birthPlace
+  - key: user_birth_place
+    name: birthPlace
     label: Fødeby
-  - name: nationality
+  - key: user_nationality
+    name: nationality
     label: Nationalitet
-  - name: gender
+  - key: user_gender
+    name: gender
     label: Køn
 

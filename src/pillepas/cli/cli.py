@@ -6,7 +6,7 @@ from typing import Iterable
 from pillepas.user_inputs import (
     select_with_menu,
     prompt_password,
-    prompt_data_dir
+    prompt_directory
 )
 from pillepas.cli.tree_utils import MenuNode, LeafNode
 from pillepas import config
@@ -56,9 +56,16 @@ class GatewayInterface:
         return self.make_menu_single(key=const.s, options=const.valid_values, title=title)
     
     def change_data_dir(self):
-        new_dir = prompt_data_dir()
-        config._set_data_dir(new_dir)
-        self.gateway.move_data(new_dir)
+        current = config.determine_data_file().parent
+        current_s = config._path_to_str(current)
+        msg = f"Enter new folder for storing data (currently using {current_s}): "
+        
+        new_dir = prompt_directory(msg=msg)
+        logger.debug(f"Got new data dir: {new_dir}")
+        config.set_data_file(new_dir)
+        new_path = config.determine_data_file()
+        logger.debug(f"Updated data dir in config: {new_path}")
+        self.gateway.move_data(new_path)
     #
 
 
@@ -104,7 +111,9 @@ def build_menu(gateway: Gateway) -> MenuNode:
         )
     )
     
-    #data = MenuNode
+    data = MenuNode(
+        "Data"
+    )
     
     
     return main
