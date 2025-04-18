@@ -11,10 +11,11 @@ class TestFormFields(TestCase):
         cls.fields_dict = config._read_fields()
 
         cls.n_form_fields = sum(len(v) for v in cls.fields_dict.values())
-        cls.n_parameters = len(data.PARAMETERS)
-        cls.n_fields = cls.n_form_fields + cls.n_parameters
 
-        cls.fields = data.FieldContainer.create()
+        cls.n_parameters = len(data.PARAMETERS)
+        cls.n_fields = len(data.FIELDS)
+
+        cls.n_total = cls.n_fields + cls.n_parameters
         
         return super().setUpClass()
     
@@ -22,15 +23,14 @@ class TestFormFields(TestCase):
         self.assertIsInstance(self.fields_dict, dict)
     
     def test_field_container(self):
-        self.assertIsInstance(self.fields, data.FieldContainer)
-        self.assertEqual(self.n_fields, len(self.fields.contents))
+        self.assertEqual(self.n_fields, len(data.FIELDS.contents))
     
     def test_filtering(self):
-        for attr in self.fields.get_distinct_attributes():
-            values = self.fields.get_distinct_values(attr)
+        for attr in data.FIELDS.get_distinct_attributes():
+            values = data.FIELDS.get_distinct_values(attr)
             for val in values:
                 d = {attr: val}
-                matches = self.fields.lookup(**d)
+                matches = data.FIELDS.lookup(**d)
                 for m in matches:
                     self.assertTrue(m.matches(**d))
                 #
@@ -38,7 +38,9 @@ class TestFormFields(TestCase):
         #
     
     def test_iteration(self):
-        elems = [e for e in self.fields]
-        total = self.n_form_fields + self.n_parameters
-        self.assertEqual(len(elems), total)
+        n = 0
+        for thing in (data.FIELDS, data.PARAMETERS):
+            for elem in thing:
+                n += 1
+        self.assertEqual(n, self.n_total)
     #

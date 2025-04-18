@@ -1,9 +1,10 @@
-from playwright.sync_api import Browser, Page, Playwright, sync_playwright
+from playwright.sync_api import Browser, Locator, Page, Playwright, sync_playwright
 from playwright._impl._errors import TargetClosedError
 
 import time
 
 from pillepas import config
+from pillepas.persistence.data import FIELDS
 
 
 def _get_data():
@@ -15,61 +16,67 @@ def _get_data():
     return res
 
 
-def probe_element(element):
+def parse_element(element: Locator):
+    attrs = ("id", "value", "name", "class", "type")
     if element:
-        attr_dict = {
-            "tag": element.evaluate("el => el.tagName"),
-            "id": element.get_attribute("id"),
-            "name": element.get_attribute("name"),
-            "class": element.get_attribute("class"),
-            "type": element.get_attribute("type"),
-            "text": element.inner_text(),
-        }
-        return attr_dict
+        d = {attr: element.get_attribute(attr) for attr in attrs}
+        d["tag"] = element.evaluate("el => el.tagName")
+        d["text"] = element.inner_text()
+        return d
     return None
-
-
-def expose(page: Page):
-    page.expose_binding("recordInput", lambda source, data: print("User typed:", data))
-
-    # Inject JS to listen for user input changes
-    page.add_init_script("""
-        document.addEventListener("input", (event) => {
-            const target = event.target;
-            if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") {
-                const data = {
-                    tag: target.tagName,
-                    name: target.name,
-                    id: target.id,
-                    value: target.value,
-                };
-                window.recordInput(data);
-            }
-        });
-    """)
-
 
 def on_page_close():
     print("The page has been closed by the user!")
-            
+
+
+def select_max_days(root_elem: Page|Locator):
+    """Selects 'all days' option from dropdown with number of days with medication"""
+    
+    # Discover the element tagged 'days-with-medicine'
+    cy_tag="days-with-medicine"
+    cy_elem = root_elem.locator(f"[cy-tag={cy_tag}]")
+    if cy_elem.count() == 0:
+        return False
+
+    # The selector has same parent as the cy-element
+    select_elem = cy_elem.locator("..").locator("select")
+
+    # Select the option with the max value
+    options = select_elem.locator("option").all()
+    choose_val = max((e.get_attribute("value") for e in options), key=int)
+    select_elem.select_option(value=choose_val)
+
+    return True
+
+
 
 class Session:
     url = config.URL
     
-    def __init__(self, form_contents: dict):
-        self.form_contents = form_contents
+    def __init__(self, fill_data: dict):
+        self.fill_data = fill_data
+        self.name_to_key = {field.name: field.key for field in FIELDS}
+        assert len(self.name_to_key) == len(FIELDS)
         self.read = dict()
+        self.already_filled_names = set([])
         
         self.playwright: Playwright | None = None
         self.browser: Browser | None = None
         self.page: Page | None = None
     
+    def iter_elems(self, query_string="input"):
+        self.page.wait_for_load_state("domcontentloaded")
+        elems = self.form.locator(query_string)
+        for elem in elems.all():
+            name = elem.get_attribute("name")
+            yield name, elem
+
     def start(self):
         self.playwright = sync_playwright().start()
         self.browser = self.playwright.chromium.launch(headless=False)
         self.page = self.browser.new_page()
         self.page.goto(self.url)
-        
+
         self.page.on("close", on_page_close)
         
         #self.page.on("framenavigated", lambda: print("omgomg"))
@@ -96,48 +103,32 @@ class Session:
     def form(self):
         return self.page.locator("form")
     
+    # def display_elements(self, q: str):
+    #     elems = self.form.locator(q).all()
+    #     for elem in elems:
+    #         print(probe_element(elem))
+
     def fill(self):
-        p = sync_playwright()
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=False)
-            page = browser.new_page()
-            page.goto(self.url)
+        for name, elem in self.iter_elems():
+            if name in self.already_filled_names:
+                continue
             
+            key = self.name_to_key.get(name)
+            val = self.fill_data.get(key)
             
-            # Locate the form (e.g., first form on the page)
-            form = page.query_selector("form")
+            if val is None:
+                continue
             
-            # Get all input, select, and textarea elements inside the form
-            form_elements = form.query_selector_all("input, select, textarea, button")
+            val = self.fill_data[key]
+            elem.fill(val)
+            self.already_filled_names.add(name)
 
-            # Print out details of each element
-            for element in form_elements:
-                print(f"Tag: {element.evaluate('el => el.tagName')}, Name: {element.get_attribute('name')}")
 
-            
-            while True:
-                time.sleep(0.5)
-
-            # # Fill in the username field
-            # page.fill('input[name="username"]', 'myUsername')
-
-            # # Optionally, fill in password and submit
-            # page.fill('input[name="password"]', 'mySecretPassword')
-            # page.click('button[type="submit"]')
-
-        #
-    #
 
 
 if __name__ == '__main__':
     data = _get_data()
+    data["doctor_first_name"] = "doktormand"  # !!!
     sess = Session(data)
     sess.start()
-    
-    while True:
-        time.sleep(0.1)
-        print(sess.is_alive(), int(time.time()))
-
-        
-    
     

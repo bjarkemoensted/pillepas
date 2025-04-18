@@ -1,6 +1,7 @@
 from __future__ import annotations
+import abc
 import dataclasses
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, final, List, Optional, Type
 
 from pillepas import config
 
@@ -73,19 +74,36 @@ def _iter_form_fields():
     #
 
 
-# Parameters determining behavior
-PARAMETERS = (
-    Parameter("save_sensitive", label="Save sensitive data", valid_values=[True, False]),
-)
+class Singleton(abc.ABCMeta):
+    _instances = {}
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
+        return cls._instances[cls]
 
 
-@dataclasses.dataclass
-class FieldContainer:
-
-    contents: Dict[str, FieldBase] = dataclasses.field(default_factory=dict)
+class BaseContainer(abc.ABC, metaclass=Singleton):
+    stores_class = FieldBase
     
+    def __init_subclass__(cls):
+        if not issubclass(cls.stores_class, FieldBase):
+            raise TypeError
+
+        return super().__init_subclass__()
+
+    @final
+    def __init__(self):
+        cls_ = self.__class__.stores_class
+        self.contents: Dict[str, cls_] = dict()
+        super().__init__()
+        self.setup()
+
+    @abc.abstractmethod
+    def setup(self):
+        raise NotImplementedError
+
     def register_field(self, field: FieldBase):
-        if not isinstance(field, FieldBase):
+        if not isinstance(field, self.stores_class):
             raise TypeError
 
         k = field.key
@@ -94,8 +112,8 @@ class FieldContainer:
     
         self.contents[k] = field
 
-    def add_new_field(self, class_: Type[FieldBase], *args, **kwargs):
-        field = class_(*args, **kwargs)
+    def add_new_field(self, *args, **kwargs):
+        field = self.stores_class(*args, **kwargs)
         self.register_field(field)
 
     def lookup(self, **kwargs):
@@ -133,20 +151,40 @@ class FieldContainer:
     
     def __iter__(self):
         return iter(self.contents.values())
-    #
+    
+    def __len__(self):
+        return len(self.contents)
 
     def __getitem__(self, key):
         return self.contents[key]
 
-    @classmethod
-    def create(cls) -> FieldContainer:
-        res = cls()
-        fields = list(PARAMETERS) + list(_iter_form_fields())
-        for field in fields:
-            res.register_field(field)
-        
+    def __str__(self) -> str:
+        data_str = f"{', '.join(f'{k}={repr(v)}' for k, v in self.contents.items())}"
+        res = f"{self.__class__.__name__} <{self.stores_class.__name__}> ({data_str})"
         return res
+
+
+class Fields(BaseContainer):
+    stores_class = FormField
+    def setup(self):
+        fields = list(_iter_form_fields())
+        for field in fields:
+            self.register_field(field)
+        #
     #
 
 
-FIELDS = FieldContainer.create()
+class Parameters(BaseContainer):
+    stores_class = Parameter
+    def setup(self):
+        self.add_new_field("save_sensitive", label="Save sensitive data", valid_values=[True, False])
+    #
+
+
+FIELDS = Fields()
+PARAMETERS = Parameters()
+
+
+if __name__ == '__main__':
+    print(FIELDS)
+    print(PARAMETERS)
