@@ -4,6 +4,19 @@ from playwright.sync_api import Locator, Page
 from typing import Callable, Dict
 
 
+def _add_filter(fun: Callable[[Locator], Locator], filter_: Callable[[Locator], bool]) -> Callable[[Locator], Locator]:
+    def f(element) -> Locator:
+        matches = fun(element)
+        candidates = matches.all()
+        candidates = [c for c in candidates if filter_(c)]
+        
+        if len(candidates) == 1:
+            return candidates[0]
+        #
+    
+    return f
+
+
 def setup_finder(role: str, filter_: Callable[[Locator], bool]=None, **role_kwargs) -> Callable[[Locator], Locator]:
     def f(element: Locator):
         e = element.get_by_role(role, **role_kwargs)
@@ -26,8 +39,13 @@ class Proxy:
                  **role_kwargs
             ):
         
-        if finder is None:
-            finder = setup_finder(role=role, filter_=filter_, **role_kwargs)
+        if role:
+            assert finder is None
+            finder = lambda e: e.get_by_role(role, **role_kwargs)
+        
+        if filter_:
+            finder = _add_filter(finder, filter_=filter_)
+            
         
         self.finder = finder
         self.sensitive = False
@@ -53,7 +71,26 @@ class Proxy:
         e = self.finder(element)
         return e is not None and e.count() > 0
 
-# form.get_by_role("textbox", name="Fornavn").and_(form.locator('[name*="doctor"]'))
+# add more medzz
+# page.get_by_role("button", name="Tilføj mere medicin").click()
+# page.locator("input[name=\"medication\\.1\\.drug\"]").click()
+# page.locator("input[name=\"medication\\.1\\.drug\"]").fill("elv")
+# page.get_by_role("option", name="Elvanse, kapsler, hårde, 20 mg 'Orifarm'").click()
+# page.locator("button").filter(has_text="Vælg antallet af dage med").click()
+# page.get_by_role("option", name="Alle dage").click()
+# page.locator("input[name=\"medication\\.1\\.dailyDose\"]").click()
+# page.locator("input[name=\"medication\\.1\\.dailyDose\"]").fill("1")
+# page.get_by_role("button", name="Ja").click()
+# page.get_by_role("button", name="Næste").click()
+# page.get_by_role("button", name="Næste").click()
+# page.get_by_role("combobox").filter(has_text="Vælg en læge").click()
+# page.get_by_role("option", name="doktorfirstname doctor").click()
+
+
+# address autocomplete stuff:
+# page.get_by_placeholder("Indtast din adresse").click()
+# page.get_by_placeholder("Indtast din adresse").fill("tagensvej 98")
+# page.get_by_role("option", name="Tagensvej 98, 2200 København N").click()
 
 
 class AutocompleteProxy(Proxy):
@@ -76,9 +113,14 @@ class DropDownProxy(Proxy):
         select_elem.select_option(label=value)
         element.press("Escape")
 
-def _doctor_filter(element: Locator) -> bool:
+
+def _doc(element: Locator) -> bool:
+    """For filtering 'doctor' in name attribute (doctor's name field is like firstName.doctor or something)"""
     res = "doctor" in element.get_attribute("name").lower()
     return res
+
+# For spotting non-doctor attributes
+_nodoc = lambda e: not _doc(e)
 
 
 vals = dict(
@@ -90,8 +132,22 @@ vals = dict(
     doctor_address = "Amerikavej",
     doctor_zipcode = "2200",
     doctor_city = "Kbh",
-    doctor_phone="123213123"
+    doctor_phone="123213123",
+    user_firstname="bjarke",
+    user_lastname="monsted",
+    user_address="tagensvej 98",
+    user_zipcode = "2200",
+    user_city = "kbh",
+    user_passport_number="123123123",
+    user_birthdate="22-03-1987",
+    user_birth_city="Hillerod",
+    user_nationality="Dansk",
+    user_email="bjarkemoensted@gmail.com",
+    user_phone_number="22578098",
+    pharmacy_name="hamlets"
 )
+
+
 
 
 # medication.0.doctorInformation.address
@@ -100,12 +156,26 @@ PROXIES = dict(
     medicine = AutocompleteProxy(finder=lambda loc: loc.get_by_placeholder("Skriv navnet på din medicin")),
     daily_dosis = Proxy("spinbutton", name="Daglig dosis i antal enheder"),
     n_days_with_meds = DropDownProxy("combobox", name="Antal dage med medicin"),
-    doctor_first_name = Proxy("textbox", name="Fornavn", filter_=_doctor_filter),
-    doctor_last_name = Proxy("textbox", name="Efternavn", filter_=_doctor_filter),
-    doctor_address = Proxy(finder=lambda e: e.locator("input[name*='address']"), filter_=_doctor_filter),
-    doctor_zipcode = Proxy("textbox", name="Postnummer"),
-    doctor_city = Proxy("textbox", name="By"),
-    doctor_phone = Proxy("textbox", name="telefon"),
+    doctor_first_name = Proxy("textbox", name="Fornavn", filter_=_doc),
+    doctor_last_name = Proxy("textbox", name="Efternavn", filter_=_doc),
+    doctor_address = Proxy(finder=lambda e: e.locator("input[name*='address']"), filter_=_doc),
+    doctor_zipcode = Proxy("textbox", name="Postnummer", filter_=_doc),
+    doctor_city = Proxy("textbox", name="By", filter_=_doc),
+    doctor_phone = Proxy("textbox", name="telefon", filter_=_doc),
+    user_firstname=Proxy("textbox", name="Fornavn", filter_= _nodoc),
+    user_lastname=Proxy("textbox", name="Efternavn", filter_= _nodoc),
+    
+    # TODO click the autocomplete thingy!!!
+    user_address=Proxy(finder=lambda e: e.locator("input[name*='address']"), filter_= lambda e: not _doc(e)),
+    user_zipcode = Proxy("textbox", name="Postnummer", filter_= _nodoc),
+    user_city = Proxy("textbox", name="By", exact=True, filter_= _nodoc),
+    user_passport_number=Proxy("textbox", name="Pasnummer"),
+    user_birthdate=Proxy("textbox", name="Indtast din fødselsdato (DD-"),
+    user_birth_city=Proxy("textbox", name="Fødeby"),
+    user_nationality=Proxy("textbox", name="Nationalitet"),
+    user_email=Proxy("textbox", name="E-mail"),
+    user_phone_number=Proxy("textbox", name="Telefonnummer", filter_= _nodoc),
+    #pharmacy_name=Proxy("placeholder", value="Indtast apotekets navn")
 )
 
 class FormGateway:
@@ -119,6 +189,9 @@ class FormGateway:
     def is_present(self, key: str):
         proxy = self.proxies[key]
         return proxy.is_present(element=self.element)
+    
+    def is_sensitive(self, key):
+        return self.proxies[key].sensitive
     
     def is_present(self, key: str):
         p = self.proxies[key]
@@ -134,23 +207,30 @@ class FormGateway:
         #
     
     def __setitem__(self, key: str, value):
-        logger.debug(f"Proxy attempting to set {key} = {value}")
+        logger.debug(f"{repr(self)} is setting key: '{key}'")
         proxy = self.proxies[key]
         proxy.set_value(element=self.element, value=value)
         logger.debug(f"Proxy set {key} = {value}")
     
     def __getitem__(self, key: str):
+        logger.debug(f"{repr(self)} is getting key: '{key}'")
         proxy = self.proxies[key]
         res = proxy.get_value(element=self.element)
         return res
     #
     
-    def signature(self) -> tuple:
-        """Returns a tuple of 0's and 1's indicating whether each field is present.
+    def signature(self) -> int:
+        """Returns a distinct integer which depends on the combination of fields that are currently visible.
         This can be used as a kind of signature, to differentiate between the various pages of a form"""
         
-        keys = sorted(self.proxies.keys())
-        res = tuple(self.proxies[k].is_present(self.element) for k in keys)
+        bits = []
+        for k, v in sorted(self.proxies.items()):
+            logger.debug(f"Signature check for presence: {k}")
+            present = v.is_present(self.element)
+            bits.append(present)
+        
+        bin_str = "".join((str(int(p)) for p in bits))
+        res = int(bin_str, 2)
         return res
     #
 

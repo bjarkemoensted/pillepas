@@ -69,18 +69,14 @@ def select_max_days(root_elem: Page|Locator):
 class Session:
     url = config.URL
     
-    def __init__(self, fill_data: dict, auto_click_next=False):
+    def __init__(self, fill_data: dict, auto_click_next=False, headless=False):
         self.fill_data = fill_data
         self.saved_fields = set([])
         self.read_fields = dict()
         self.auto_click_next = auto_click_next
-        
-        # self.name_to_key = {field.name: field.key for field in FIELDS}
-        # assert len(self.name_to_key) == len(FIELDS)
-        # self.read = dict()
-        # self.already_filled_names = set([])
-        
         self.processed_pages_signatures = set([])  # For figuring out if we already did a page
+        
+        self.headless = headless
         self.playwright: Playwright | None = None
         self.browser: Browser | None = None
         self.context = None
@@ -89,7 +85,7 @@ class Session:
     
     def start(self):
         self.playwright = sync_playwright().start()
-        self.browser = self.playwright.chromium.launch(headless=False)
+        self.browser = self.playwright.chromium.launch(headless=self.headless)
         self.context = self.browser.new_context(color_scheme="dark")
         self.page = self.context.new_page()
         self.page.goto(self.url)
@@ -109,6 +105,14 @@ class Session:
         if page_done:
             self._click_and_wait(button_name="Næste")
 
+    def _log_str(self, key: str, value):
+        valstring = str(value)
+        if self.form_gateway.is_sensitive(key):
+            valstring = "*"*len(valstring)
+        
+        s = f"{key} = {valstring}"
+        return s
+
     def process_current_page(self, force_reprocess=False):
         """Go over all present fields, write any unwritten data, and update read values"""
         
@@ -116,6 +120,7 @@ class Session:
         if sig in self.processed_pages_signatures and not force_reprocess:
             return
         
+        logger.info(f"Processing form page with signature {sig}")
         self.processed_pages_signatures.add(sig)
         
         for key in self.form_gateway.present_fields():
@@ -123,9 +128,12 @@ class Session:
             needs_write = key not in self.saved_fields and key in self.fill_data
             if needs_write:
                 try:
-                    self.form_gateway[key] = self.fill_data[key]
+                    val = self.fill_data[key]
+                    
+                    self.form_gateway[key] = val
+                    logger.info(f"Filled form element: {self._log_str(key, val)}.")
                 except Exception as e:
-                    logger.error(f"{self} failed to write field: {key} - {e}")
+                    logger.error(f"{self} failed to fill element: {key} - {e}")
                 
                 self.saved_fields.add(key)
             #
@@ -133,7 +141,7 @@ class Session:
             current_val = self.form_gateway[key]
             if current_val != self.read_fields.get(key):
                 self.read_fields[key] = current_val
-                logger.debug(f"Read {len(current_val)} chars from field '{key}'.")
+                logger.info(f"Read form element: {self._log_str(key, current_val)}.")
         
         if self.auto_click_next:
             self.next_page()
@@ -164,6 +172,9 @@ class Session:
     
 
 if __name__ == '__main__':
+    HEADLESS = True
+    DEBUG_LEVEL = logging.INFO
+    
     from pillepas.automation.actions import vals
     import logging
     
@@ -173,11 +184,11 @@ if __name__ == '__main__':
     logpath = path.parent / "log.log"
     logpath.unlink(missing_ok=True)
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=DEBUG_LEVEL,
         #filename=str(logpath)
     )
     
-    sess = Session(vals, auto_click_next=True)
+    sess = Session(vals, auto_click_next=True, headless=HEADLESS)
     sess.start()
     DATESTUFF(sess.page)
     
