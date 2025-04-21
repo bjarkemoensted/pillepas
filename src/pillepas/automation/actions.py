@@ -32,12 +32,13 @@ def setup_finder(role: str, filter_: Callable[[Locator], bool]=None, **role_kwar
 
 
 class Proxy:
-    def __init__(self,
-                 role: str=None,
-                 finder: Callable[[Locator], Locator]=None,
-                 filter_: Callable[[Locator], bool]=None,
-                 **role_kwargs
-            ):
+    def __init__(
+        self,
+        role: str=None,
+        finder: Callable[[Locator], Locator]=None,
+        filter_: Callable[[Locator], bool]=None,
+        **role_kwargs
+        ):
         
         if role:
             assert finder is None
@@ -112,7 +113,38 @@ class DropDownProxy(Proxy):
         # Select the option with the max value
         select_elem.select_option(label=value)
         element.press("Escape")
+    #
 
+
+class RadioButtonProxy(Proxy):
+    
+    def __init__(self, label: str):
+        self.label = label
+        super().__init__(finder=self._finder)  # TODO clumsy. Should init with base element and expose the relevant elem as property!!!
+    
+    def _finder(self, element: Locator):
+        label = element.locator('label', has_text=self.label)
+        if label.count() == 0:
+            return
+        
+        id_ = label.get_attribute('for')
+        top_elem = element.locator(f'[id="{id_}"]')
+        #radio_group = label.locator('..').locator('..').get_by_role('radiogroup')
+        return top_elem
+    
+    def set_value(self, element, value):
+        # locate label: e.locator('label', has_text=value).count()
+        e = self._finder(element)
+        target_button = e.locator(f'button[value={value}]')
+        target_button.click()
+        
+    def get_value(self, element):
+        e = self.finder(element)
+        selected = e.locator('[role="radio"][aria-checked="true"]')
+        val = selected.get_attribute('value')
+        return val
+
+# ['Male', 'Female', 'Unspecified']  # gender vals
 
 def _doc(element: Locator) -> bool:
     """For filtering 'doctor' in name attribute (doctor's name field is like firstName.doctor or something)"""
@@ -121,6 +153,18 @@ def _doc(element: Locator) -> bool:
 
 # For spotting non-doctor attributes
 _nodoc = lambda e: not _doc(e)
+
+
+
+# page.get_by_text("Kvinde (F)").click()
+# page.get_by_text("Uspecificeret (X)").click()
+# page.get_by_text("Kvinde (F)").click()
+# page.get_by_role("radio", name="Uspecificeret (X)").click()
+# page.get_by_role("radio", name="Mand (M)").click()
+
+
+
+gender_stuff = ("Kvinde (F)", "Mand (M)", "Uspecificeret (X)")
 
 
 vals = dict(
@@ -144,6 +188,7 @@ vals = dict(
     user_nationality="Dansk",
     user_email="bjarkemoensted@gmail.com",
     user_phone_number="22578098",
+    user_gender = "Male",
     pharmacy_name="hamlets"
 )
 
@@ -169,12 +214,13 @@ PROXIES = dict(
     user_address=Proxy(finder=lambda e: e.locator("input[name*='address']"), filter_= lambda e: not _doc(e)),
     user_zipcode = Proxy("textbox", name="Postnummer", filter_= _nodoc),
     user_city = Proxy("textbox", name="By", exact=True, filter_= _nodoc),
-    user_passport_number=Proxy("textbox", name="Pasnummer"),
-    user_birthdate=Proxy("textbox", name="Indtast din fødselsdato (DD-"),
-    user_birth_city=Proxy("textbox", name="Fødeby"),
-    user_nationality=Proxy("textbox", name="Nationalitet"),
-    user_email=Proxy("textbox", name="E-mail"),
-    user_phone_number=Proxy("textbox", name="Telefonnummer", filter_= _nodoc),
+    user_passport_number = Proxy("textbox", name="Pasnummer"),
+    user_birthdate = Proxy("textbox", name="Indtast din fødselsdato (DD-"),
+    user_birth_city = Proxy("textbox", name="Fødeby"),
+    user_nationality = Proxy("textbox", name="Nationalitet"),
+    user_email = Proxy("textbox", name="E-mail"),
+    user_phone_number = Proxy("textbox", name="Telefonnummer", filter_= _nodoc),
+    user_gender = RadioButtonProxy(label="Køn")
     #pharmacy_name=Proxy("placeholder", value="Indtast apotekets navn")
 )
 

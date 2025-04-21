@@ -122,7 +122,7 @@ class Session:
         
         logger.info(f"Processing form page with signature {sig}")
         self.processed_pages_signatures.add(sig)
-        
+
         for key in self.form_gateway.present_fields():
             
             needs_write = key not in self.saved_fields and key in self.fill_data
@@ -172,7 +172,7 @@ class Session:
     
 
 if __name__ == '__main__':
-    HEADLESS = True
+    HEADLESS = False
     DEBUG_LEVEL = logging.INFO
     
     from pillepas.automation.actions import vals
@@ -192,10 +192,15 @@ if __name__ == '__main__':
     sess.start()
     DATESTUFF(sess.page)
     
+    now = time.time()
+    
     while True:
         sess.process_current_page()
         print(int(time.time()))
         time.sleep(1)
+        
+        if time.time() - now > 15:
+            break
         
     #print(logpath.read_text())
     
