@@ -152,7 +152,7 @@ class Session:
 
 if __name__ == '__main__':
     HEADLESS = False
-    DEBUG_LEVEL = logging.DEBUG
+    DEBUG_LEVEL = logging.INFO
     
     from pillepas.automation.actions import vals
     import logging
@@ -178,8 +178,6 @@ if __name__ == '__main__':
         print(int(time.time()))
         time.sleep(1)
         
-        if time.time() - now > 15:
-            break
         
     #print(logpath.read_text())
     

@@ -1,8 +1,8 @@
-import abc
 import logging
 logger = logging.getLogger(__name__)
 from playwright.sync_api import Locator, Page
-from typing import Callable, Dict, Type
+from typing import Callable, Dict, Type, Generator, Tuple
+import time
 
 
 # add more medzz
@@ -29,32 +29,16 @@ from typing import Callable, Dict, Type
 
 class Proxy:
     def __init__(
-            self,
-            root_element: Locator,
-            sensitive=False,
-            key: str=None,
-            element_finder: Callable[[Locator], Locator]=None,
-            role: str=None,
-            css: str=None,
-            **kwargs):
+            self, element: Locator, sensitive=False, key: str=None):
         """Proxy for a form element, to harmonize get/set logic. The ideas is to create
         subclasses of this for specific types of inputs (radio buttons, dropdowns, text, etc).
-        root_element: Locator for the topmost element in the form.
+        element: Locator for the topmost element in the form.
         sensitive: Whether the field contains sensitive information (influences whether saved and logged)
-        key: Optional key representing the key used for the proxy (useful for debugging etc)
-        element_finder: Optional callable for locating an element from the root element
-        role: Optionsl role. If specified, an element is located by root.get_by_role(role, **kwargs)
-        css: Optional CSS locator string. If specified, element is located with root.locator(css)
-        kwargs: Additional kwargs for use in locating"""
+        key: Optional key representing the key used for the proxy (useful for debugging etc)"""
         
-        self.root_element = root_element
+        self.e = element
         self.sensitive = sensitive
         self.key = key
-        
-        self.element_finder = element_finder
-        self.role = role
-        self.css = css
-        self._locate_kwargs = {k: v for k, v in kwargs.items()}
     
     def __repr__(self):
         s = self.__class__.__name__
@@ -66,33 +50,11 @@ class Proxy:
     def __str__(self):
         return repr(self)
     
-    def locate_element(self) -> Locator:
-        """Locates the target element(s) from the root element"""
-        
-        logger.debug(f"{self} is locating element")
-        e = self.root_element
-        if self.element_finder:
-            e = self.element_finder(e)
-        if self.role:
-            e = e.get_by_role(self.role, **self._locate_kwargs)
-        if self.css:
-            e = e.locator(self.css)
-        if e == self.root_element:
-            raise RuntimeError(f"Not sufficient inputs to locate element")
-        
-        return e
-    
-    @property
-    def e(self) -> Locator:
-        """Returns the form element (e.g. text field for an input)"""
-        res = self.locate_element()
-        
-        return res
-    
     def set_value(self, value: str):
         logger.debug(f"{self} is setting value: {'*'*len(str(value)) if self.sensitive else value}")
         self.e.click(force=True)
         self.e.fill(value)
+        self.e.dispatch_event('change')
         
     def get_value(self):
         logger.debug(f"{self} is getting value.")
@@ -105,24 +67,36 @@ class Proxy:
 
 
 class AutocompleteProxy(Proxy):
-    def set_value(self, element, value: str):
-        e = self.finder(element)
-        e.click()
-        e.fill(value[:3])
-        element.get_by_role("option", name=value).click()
-        return super().set_value(element, value)
+    def set_value(self, value: str):
+        self.e.click()
+        top = self.e.locator("..").locator("..")
+        target = top.get_by_role("option", name=value)
+        
+        for char in value:
+            if char.isalnum():
+                self.e.press(char, delay=50)
+            else:
+                break
+        
+        # TODO wait for suggestion list to appear instead!!!
+        time.sleep(1.0)
+        
+        if target.count() == 1:
+            target.click()
+            
+            #
+        #
     #
 
 
 class DropDownProxy(Proxy):
-    def set_value(self, element: Locator, value: str):
-        e = self.finder(element)  # TODO this needs to discover the topmost element relative to base.get_by_role('combobox', name="Antal dage med medicin")
-        select_elem = e.locator("..").locator("select").element_handle()
+    def set_value(self, value: str):
+        select_elem = self.e.locator("..").locator("select").element_handle()
         
-        e.click(force=True)
+        self.e.click(force=True)
         # Select the option with the max value
         select_elem.select_option(label=value)
-        element.press("Escape")
+        select_elem.press("Escape")
     #
 
 
@@ -174,7 +148,7 @@ vals = dict(
     n_days_with_meds = "Alle dage",
     doctor_first_name = "meh",
     doctor_last_name = "meh",
-    doctor_address = "Amerikavej",
+    doctor_address = "Amerikavej 15C, 1",
     doctor_zipcode = "2200",
     doctor_city = "Kbh",
     doctor_phone="123213123",
@@ -194,58 +168,66 @@ vals = dict(
 )
 
 
-class ProxyFactory:
-    def __init__(self, cls: Type[Proxy], **kwargs):
-        if not issubclass(cls, Proxy):
-            raise TypeError
-        
-        self.cls = cls
-        self.kwargs = kwargs
-
-    def __call__(self, **kwargs):
-        new_keys = set(kwargs.keys())
-        old_keys = set(self.kwargs.keys())
-        ambiguous = sorted(new_keys.intersection(old_keys))
-        if ambiguous:
-            raise RuntimeError(f"Keys were define multiple times in factory class: {', '.join(ambiguous)}.")
-        
-        return self.cls(**kwargs, **self.kwargs)
-
-
 # medication.0.doctorInformation.address
 
-PROXIES = dict(
-    #medicine = AutocompleteProxy(finder=lambda loc: loc.get_by_placeholder("Skriv navnet på din medicin")),
-    #daily_dosis = Proxy("spinbutton", name="Daglig dosis i antal enheder"),
-    #n_days_with_meds = DropDownProxy("combobox", name="Antal dage med medicin"),
-    
-    doctor_first_name = ProxyFactory(Proxy, role="textbox", name="Fornavn", css='[name*="doctor"]'),
-    # chatten sir vi kan chaine like: page.locator('[name*="user"]:not([name*="admin"])')
+def proxy_factory(elem: Page|Locator) -> Generator[Tuple[str, Proxy], None, None]:
+    page = elem.page
+    dr_css = ':scope[name*="doctor"]'
+    nodr_css = ':not(:scope[name*="doctor"])'
 
-    doctor_last_name = ProxyFactory(Proxy, role="textbox", name="Efternavn"),
-    doctor_address = ProxyFactory(Proxy, css='input[name*="address"][name*="doctor"]'),  # "input[name*='address']"
-    doctor_zipcode = ProxyFactory(Proxy, role="textbox", name="Postnummer"),  # [name*="user"]
-    doctor_city = ProxyFactory(Proxy, role="textbox", name="By"),
-    doctor_phone = ProxyFactory(Proxy, role="textbox", name="telefon"),
-    
-    
-    
-    user_first_name = ProxyFactory(Proxy, role="textbox", name="Fornavn", css=':not([name*="doctor"])'),
-    user_last_name=ProxyFactory(Proxy, role="textbox", name="Efternavn", css=':not([name*="doctor"])'),
-    
-    # TODO click the autocomplete thingy!!!
-    #user_address=Proxy(finder=lambda e: e.locator("input[name*='address']"), filter_= lambda e: not _doc(e)),
-    #user_zipcode = Proxy("textbox", name="Postnummer", filter_= _nodoc),
-    #user_city = Proxy("textbox", name="By", exact=True, filter_= _nodoc),
-    #user_passport_number = Proxy("textbox", name="Pasnummer"),
-    #user_birthdate = Proxy("textbox", name="Indtast din fødselsdato (DD-"),
-    #user_birth_city = Proxy("textbox", name="Fødeby"),
-    #user_nationality = Proxy("textbox", name="Nationalitet"),
-    #user_email = Proxy("textbox", name="E-mail"),
-    #user_phone_number = Proxy("textbox", name="Telefonnummer", filter_= _nodoc),
-    #user_gender = RadioButtonProxy(label="Køn")
-    #pharmacy_name=Proxy("placeholder", value="Indtast apotekets navn")
-)
+    d = dict(
+        medicine = (AutocompleteProxy, page.get_by_role("combobox").filter(has=page.locator(':scope[name*="drug"]'))),
+        daily_dosis = (Proxy, elem.get_by_role("spinbutton", name="Daglig dosis i antal enheder")),
+        n_days_with_meds = (DropDownProxy, elem.get_by_role("combobox", name="Antal dage med medicin")),
+        doctor_first_name = (Proxy, elem.get_by_role("textbox", name="Fornavn").filter(has=page.locator(dr_css))),
+        doctor_last_name = (Proxy, elem.get_by_role("textbox", name="Efternavn").filter(has=page.locator(dr_css))),
+
+        
+        doctor_address = (AutocompleteProxy, elem.locator('input[name*="address"]').filter(has=page.locator(dr_css))),
+        doctor_zipcode = (Proxy, elem.get_by_role("textbox", name="Postnummer").filter(has=page.locator(dr_css))),
+        doctor_city = (Proxy, elem.get_by_role("textbox", name="By").filter(has=page.locator(dr_css))),
+        doctor_phone = (Proxy, elem.get_by_role("textbox", name="telefon").filter(has=page.locator(dr_css))),
+
+        user_first_name = (Proxy, elem.get_by_role("textbox", name="Fornavn").filter(has=page.locator(nodr_css))),
+        user_last_name = (Proxy, elem.get_by_role("textbox", name="Efternavn").filter(has=page.locator(nodr_css))),
+
+        # TODO click the autocomplete thingy!!!
+        user_address = (Proxy, elem.locator("input[name*='address']").filter(has=page.locator(nodr_css))),
+        user_zipcode = (Proxy, elem.get_by_role("textbox", name="Postnummer").filter(has=page.locator(nodr_css))),
+        user_city = (Proxy, elem.get_by_role("textbox", name="By").filter(has=page.locator(nodr_css))),
+        user_passport_number = (Proxy, elem.get_by_role("textbox", name="Pasnummer").filter(has=page.locator(nodr_css))),
+        user_birthdate = (Proxy, elem.get_by_role("textbox", name="Indtast din fødselsdato (DD-").filter(has=page.locator(nodr_css))),
+        user_birth_city = (Proxy, elem.get_by_role("textbox", name="Fødeby").filter(has=page.locator(nodr_css))),
+        user_nationality = (Proxy, elem.get_by_role("textbox", name="Nationalitet").filter(has=page.locator(nodr_css))),
+        user_email = (Proxy, elem.get_by_role("textbox", name="E-mail").filter(has=page.locator(nodr_css))),
+        user_phone_number = (Proxy, elem.get_by_role("textbox", name="Telefonnummer").filter(has=page.locator(nodr_css))),
+
+
+
+        #user_gender = RadioButtonProxy(label="Køn"),
+        pharmacy_name = (Proxy, elem.locator("input[placeholder='Indtast apotekets navn']"))
+
+        # user_first_name = ProxyFactory(Proxy, role="textbox", name="Fornavn", css=':not([name*="doctor"])'),
+        # user_last_name=ProxyFactory(Proxy, role="textbox", name="Efternavn", css=':not([name*="doctor"])'),
+        
+        # TODO click the autocomplete thingy!!!
+        #user_address=Proxy(finder=lambda e: e.locator("input[name*='address']"), filter_= lambda e: not _doc(e)),
+        #user_zipcode = Proxy("textbox", name="Postnummer", filter_= _nodoc),
+        #user_city = Proxy("textbox", name="By", exact=True, filter_= _nodoc),
+        #user_passport_number = Proxy("textbox", name="Pasnummer"),
+        #user_birthdate = Proxy("textbox", name="Indtast din fødselsdato (DD-"),
+        #user_birth_city = Proxy("textbox", name="Fødeby"),
+        #user_nationality = Proxy("textbox", name="Nationalitet"),
+        #user_email = Proxy("textbox", name="E-mail"),
+        #user_phone_number = Proxy("textbox", name="Telefonnummer", filter_= _nodoc),
+        #user_gender = RadioButtonProxy(label="Køn")
+        #pharmacy_name=Proxy("placeholder", value="Indtast apotekets navn")
+    )
+
+    for key, (cls, elem) in d.items():
+        proxy = cls(elem, key=key)
+        yield key, proxy
+    #
 
 
 class Proxies(dict[str, Proxy]):
@@ -254,11 +236,12 @@ class Proxies(dict[str, Proxy]):
     
     def __init__(self, element: Locator):
         super().__init__()
-        for key, factory in PROXIES.items():
-            proxy = factory(root_element=element, key=key)
-            self[key] = proxy
-
         self.element = element
+
+        for key, proxy in proxy_factory(self.element):
+            self[key] = proxy
+        #
+    #
     
     def present_fields(self):
         for key, proxy in self.items():
