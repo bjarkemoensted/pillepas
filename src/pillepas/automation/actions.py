@@ -1,76 +1,9 @@
+import abc
 import logging
 logger = logging.getLogger(__name__)
 from playwright.sync_api import Locator, Page
-from typing import Callable, Dict
+from typing import Callable, Dict, Type
 
-
-def _add_filter(fun: Callable[[Locator], Locator], filter_: Callable[[Locator], bool]) -> Callable[[Locator], Locator]:
-    def f(element) -> Locator:
-        matches = fun(element)
-        candidates = matches.all()
-        candidates = [c for c in candidates if filter_(c)]
-        
-        if len(candidates) == 1:
-            return candidates[0]
-        #
-    
-    return f
-
-
-def setup_finder(role: str, filter_: Callable[[Locator], bool]=None, **role_kwargs) -> Callable[[Locator], Locator]:
-    def f(element: Locator):
-        e = element.get_by_role(role, **role_kwargs)
-        candidates = e.all()
-        if filter_ is not None:
-            candidates = [c for c in candidates if filter_(c)]
-        
-        if len(candidates) == 1:
-            return candidates[0]
-        #
-    
-    return f
-
-
-class Proxy:
-    def __init__(
-        self,
-        role: str=None,
-        finder: Callable[[Locator], Locator]=None,
-        filter_: Callable[[Locator], bool]=None,
-        **role_kwargs
-        ):
-        
-        if role:
-            assert finder is None
-            finder = lambda e: e.get_by_role(role, **role_kwargs)
-        
-        if filter_:
-            finder = _add_filter(finder, filter_=filter_)
-            
-        
-        self.finder = finder
-        self.sensitive = False
-    
-    def set_value(self, element: Locator, value: str):
-        e = self.finder(element)
-        e.click(force=True)
-        e.fill(value)
-        
-    def get_value(self, element: Locator):
-        e = self.finder(element)
-        res = e.get_attribute("value")
-        return res
-    
-    def get_matches(self, element: Locator):
-        """Returns list of all matches inside element which match the proxy's finder"""
-        elems = self.finder(element)
-        if elems is None:
-            return []
-        return elems.all()
-    
-    def is_present(self, element: Locator):
-        e = self.finder(element)
-        return e is not None and e.count() > 0
 
 # add more medzz
 # page.get_by_role("button", name="Tilføj mere medicin").click()
@@ -94,6 +27,83 @@ class Proxy:
 # page.get_by_role("option", name="Tagensvej 98, 2200 København N").click()
 
 
+class Proxy:
+    def __init__(
+            self,
+            root_element: Locator,
+            sensitive=False,
+            key: str=None,
+            element_finder: Callable[[Locator], Locator]=None,
+            role: str=None,
+            css: str=None,
+            **kwargs):
+        """Proxy for a form element, to harmonize get/set logic. The ideas is to create
+        subclasses of this for specific types of inputs (radio buttons, dropdowns, text, etc).
+        root_element: Locator for the topmost element in the form.
+        sensitive: Whether the field contains sensitive information (influences whether saved and logged)
+        key: Optional key representing the key used for the proxy (useful for debugging etc)
+        element_finder: Optional callable for locating an element from the root element
+        role: Optionsl role. If specified, an element is located by root.get_by_role(role, **kwargs)
+        css: Optional CSS locator string. If specified, element is located with root.locator(css)
+        kwargs: Additional kwargs for use in locating"""
+        
+        self.root_element = root_element
+        self.sensitive = sensitive
+        self.key = key
+        
+        self.element_finder = element_finder
+        self.role = role
+        self.css = css
+        self._locate_kwargs = {k: v for k, v in kwargs.items()}
+    
+    def __repr__(self):
+        s = self.__class__.__name__
+        if self.key:
+            s = f"{s} <{self.key}>"
+        
+        return s
+    
+    def __str__(self):
+        return repr(self)
+    
+    def locate_element(self) -> Locator:
+        """Locates the target element(s) from the root element"""
+        
+        logger.debug(f"{self} is locating element")
+        e = self.root_element
+        if self.element_finder:
+            e = self.element_finder(e)
+        if self.role:
+            e = e.get_by_role(self.role, **self._locate_kwargs)
+        if self.css:
+            e = e.locator(self.css)
+        if e == self.root_element:
+            raise RuntimeError(f"Not sufficient inputs to locate element")
+        
+        return e
+    
+    @property
+    def e(self) -> Locator:
+        """Returns the form element (e.g. text field for an input)"""
+        res = self.locate_element()
+        
+        return res
+    
+    def set_value(self, value: str):
+        logger.debug(f"{self} is setting value: {'*'*len(str(value)) if self.sensitive else value}")
+        self.e.click(force=True)
+        self.e.fill(value)
+        
+    def get_value(self):
+        logger.debug(f"{self} is getting value.")
+        res = self.e.get_attribute("value")
+        return res
+    
+    def is_present(self):
+        return self.e.count() > 0
+    #
+
+
 class AutocompleteProxy(Proxy):
     def set_value(self, element, value: str):
         e = self.finder(element)
@@ -106,7 +116,7 @@ class AutocompleteProxy(Proxy):
 
 class DropDownProxy(Proxy):
     def set_value(self, element: Locator, value: str):
-        e = self.finder(element)
+        e = self.finder(element)  # TODO this needs to discover the topmost element relative to base.get_by_role('combobox', name="Antal dage med medicin")
         select_elem = e.locator("..").locator("select").element_handle()
         
         e.click(force=True)
@@ -146,15 +156,6 @@ class RadioButtonProxy(Proxy):
 
 # ['Male', 'Female', 'Unspecified']  # gender vals
 
-def _doc(element: Locator) -> bool:
-    """For filtering 'doctor' in name attribute (doctor's name field is like firstName.doctor or something)"""
-    res = "doctor" in element.get_attribute("name").lower()
-    return res
-
-# For spotting non-doctor attributes
-_nodoc = lambda e: not _doc(e)
-
-
 
 # page.get_by_text("Kvinde (F)").click()
 # page.get_by_text("Uspecificeret (X)").click()
@@ -177,8 +178,8 @@ vals = dict(
     doctor_zipcode = "2200",
     doctor_city = "Kbh",
     doctor_phone="123213123",
-    user_firstname="bjarke",
-    user_lastname="monsted",
+    user_first_name="bjarke",
+    user_last_name="monsted",
     user_address="tagensvej 98",
     user_zipcode = "2200",
     user_city = "kbh",
@@ -193,86 +194,88 @@ vals = dict(
 )
 
 
+class ProxyFactory:
+    def __init__(self, cls: Type[Proxy], **kwargs):
+        if not issubclass(cls, Proxy):
+            raise TypeError
+        
+        self.cls = cls
+        self.kwargs = kwargs
+
+    def __call__(self, **kwargs):
+        new_keys = set(kwargs.keys())
+        old_keys = set(self.kwargs.keys())
+        ambiguous = sorted(new_keys.intersection(old_keys))
+        if ambiguous:
+            raise RuntimeError(f"Keys were define multiple times in factory class: {', '.join(ambiguous)}.")
+        
+        return self.cls(**kwargs, **self.kwargs)
 
 
 # medication.0.doctorInformation.address
 
 PROXIES = dict(
-    medicine = AutocompleteProxy(finder=lambda loc: loc.get_by_placeholder("Skriv navnet på din medicin")),
-    daily_dosis = Proxy("spinbutton", name="Daglig dosis i antal enheder"),
-    n_days_with_meds = DropDownProxy("combobox", name="Antal dage med medicin"),
-    doctor_first_name = Proxy("textbox", name="Fornavn", filter_=_doc),
-    doctor_last_name = Proxy("textbox", name="Efternavn", filter_=_doc),
-    doctor_address = Proxy(finder=lambda e: e.locator("input[name*='address']"), filter_=_doc),
-    doctor_zipcode = Proxy("textbox", name="Postnummer", filter_=_doc),
-    doctor_city = Proxy("textbox", name="By", filter_=_doc),
-    doctor_phone = Proxy("textbox", name="telefon", filter_=_doc),
-    user_firstname=Proxy("textbox", name="Fornavn", filter_= _nodoc),
-    user_lastname=Proxy("textbox", name="Efternavn", filter_= _nodoc),
+    #medicine = AutocompleteProxy(finder=lambda loc: loc.get_by_placeholder("Skriv navnet på din medicin")),
+    #daily_dosis = Proxy("spinbutton", name="Daglig dosis i antal enheder"),
+    #n_days_with_meds = DropDownProxy("combobox", name="Antal dage med medicin"),
+    
+    doctor_first_name = ProxyFactory(Proxy, role="textbox", name="Fornavn", css='[name*="doctor"]'),
+    # chatten sir vi kan chaine like: page.locator('[name*="user"]:not([name*="admin"])')
+
+    doctor_last_name = ProxyFactory(Proxy, role="textbox", name="Efternavn"),
+    doctor_address = ProxyFactory(Proxy, css='input[name*="address"][name*="doctor"]'),  # "input[name*='address']"
+    doctor_zipcode = ProxyFactory(Proxy, role="textbox", name="Postnummer"),  # [name*="user"]
+    doctor_city = ProxyFactory(Proxy, role="textbox", name="By"),
+    doctor_phone = ProxyFactory(Proxy, role="textbox", name="telefon"),
+    
+    
+    
+    user_first_name = ProxyFactory(Proxy, role="textbox", name="Fornavn", css=':not([name*="doctor"])'),
+    user_last_name=ProxyFactory(Proxy, role="textbox", name="Efternavn", css=':not([name*="doctor"])'),
     
     # TODO click the autocomplete thingy!!!
-    user_address=Proxy(finder=lambda e: e.locator("input[name*='address']"), filter_= lambda e: not _doc(e)),
-    user_zipcode = Proxy("textbox", name="Postnummer", filter_= _nodoc),
-    user_city = Proxy("textbox", name="By", exact=True, filter_= _nodoc),
-    user_passport_number = Proxy("textbox", name="Pasnummer"),
-    user_birthdate = Proxy("textbox", name="Indtast din fødselsdato (DD-"),
-    user_birth_city = Proxy("textbox", name="Fødeby"),
-    user_nationality = Proxy("textbox", name="Nationalitet"),
-    user_email = Proxy("textbox", name="E-mail"),
-    user_phone_number = Proxy("textbox", name="Telefonnummer", filter_= _nodoc),
-    user_gender = RadioButtonProxy(label="Køn")
+    #user_address=Proxy(finder=lambda e: e.locator("input[name*='address']"), filter_= lambda e: not _doc(e)),
+    #user_zipcode = Proxy("textbox", name="Postnummer", filter_= _nodoc),
+    #user_city = Proxy("textbox", name="By", exact=True, filter_= _nodoc),
+    #user_passport_number = Proxy("textbox", name="Pasnummer"),
+    #user_birthdate = Proxy("textbox", name="Indtast din fødselsdato (DD-"),
+    #user_birth_city = Proxy("textbox", name="Fødeby"),
+    #user_nationality = Proxy("textbox", name="Nationalitet"),
+    #user_email = Proxy("textbox", name="E-mail"),
+    #user_phone_number = Proxy("textbox", name="Telefonnummer", filter_= _nodoc),
+    #user_gender = RadioButtonProxy(label="Køn")
     #pharmacy_name=Proxy("placeholder", value="Indtast apotekets navn")
 )
 
-class FormGateway:
+
+class Proxies(dict[str, Proxy]):
     #doctor_first_name = Element(Locator.get_by_role())
     #page.get_by_role("textbox", name="Fornavn").fill("doktorfirstname")
     
     def __init__(self, element: Locator):
-        self.proxies = {k: v for k, v in PROXIES.items()}
+        super().__init__()
+        for key, factory in PROXIES.items():
+            proxy = factory(root_element=element, key=key)
+            self[key] = proxy
+
         self.element = element
     
-    def is_present(self, key: str):
-        proxy = self.proxies[key]
-        return proxy.is_present(element=self.element)
-    
-    def is_sensitive(self, key):
-        return self.proxies[key].sensitive
-    
-    def is_present(self, key: str):
-        p = self.proxies[key]
-        hits = p.get_matches(self.element)
-        return len(hits) > 0
-    
     def present_fields(self):
-        for key in self.proxies.keys():
-            if self.is_present(key):
+        for key, proxy in self.items():
+            if proxy.is_present():
                 logger.debug(f"{self} detected {key} is present")
                 yield key
             #
         #
-    
-    def __setitem__(self, key: str, value):
-        logger.debug(f"{repr(self)} is setting key: '{key}'")
-        proxy = self.proxies[key]
-        proxy.set_value(element=self.element, value=value)
-        logger.debug(f"Proxy set {key} = {value}")
-    
-    def __getitem__(self, key: str):
-        logger.debug(f"{repr(self)} is getting key: '{key}'")
-        proxy = self.proxies[key]
-        res = proxy.get_value(element=self.element)
-        return res
-    #
     
     def signature(self) -> int:
         """Returns a distinct integer which depends on the combination of fields that are currently visible.
         This can be used as a kind of signature, to differentiate between the various pages of a form"""
         
         bits = []
-        for k, v in sorted(self.proxies.items()):
-            logger.debug(f"Signature check for presence: {k}")
-            present = v.is_present(self.element)
+        for key, proxy in sorted(self.items()):
+            logger.debug(f"Signature check for presence: {key}")
+            present = proxy.is_present()
             bits.append(present)
         
         bin_str = "".join((str(int(p)) for p in bits))
@@ -282,5 +285,4 @@ class FormGateway:
 
 
 if __name__ == '__main__':
-    fg = FormGateway(element=None)
-    print(fg.proxies)
+    pass

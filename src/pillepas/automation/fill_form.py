@@ -5,7 +5,7 @@ from playwright.sync_api import Browser, Locator, Page, Playwright, sync_playwri
 from playwright._impl._errors import TargetClosedError
 import time
 
-from pillepas.automation.actions import FormGateway
+from pillepas.automation.actions import Proxies
 from pillepas.automation.utils import WaitForChange
 from pillepas import config
 from pillepas.persistence.data import FIELDS
@@ -36,34 +36,13 @@ def on_page_close():
 # TODO DELETE!!!!!
 def DATESTUFF(page):
     page.get_by_role("button", name="Vælg dato for udrejse og").click()
-    page.get_by_label("april").get_by_role("gridcell", name="21").click()
+    page.get_by_label("april").get_by_role("gridcell", name="25").click()
     page.get_by_role("button", name="Go to next month").click()
     page.get_by_role("button", name="Go to previous month").click()
     page.get_by_role("button", name="Go to next month").click()
     page.get_by_label("maj").get_by_role("gridcell", name="9", exact=True).click()
     page.get_by_role("button", name="Gem datoer").click()
     return
-
-
-def select_max_days(root_elem: Page|Locator):
-    """Selects 'all days' option from dropdown with number of days with medication"""
-    
-    # Discover the element tagged 'days-with-medicine'
-    cy_tag="days-with-medicine"
-    cy_elem = root_elem.locator(f"[cy-tag={cy_tag}]")
-    if cy_elem.count() == 0:
-        return False
-
-    # The selector has same parent as the cy-element
-    select_elem = cy_elem.locator("..").locator("select")
-
-    # Select the option with the max value
-    options = select_elem.locator("option").all()
-    choose_val = max((e.get_attribute("value") for e in options), key=int)
-    select_elem.select_option(value=choose_val)
-
-    return True
-
 
 
 class Session:
@@ -81,7 +60,7 @@ class Session:
         self.browser: Browser | None = None
         self.context = None
         self.page: Page | None = None
-        self.form_gateway = None
+        self.proxies: Proxies = None
     
     def start(self):
         self.playwright = sync_playwright().start()
@@ -89,7 +68,7 @@ class Session:
         self.context = self.browser.new_context(color_scheme="dark")
         self.page = self.context.new_page()
         self.page.goto(self.url)
-        self.form_gateway = FormGateway(self.form)
+        self.proxies = Proxies(self.form)
 
         self.page.on("close", on_page_close)
         
@@ -101,13 +80,13 @@ class Session:
         #
 
     def next_page(self):
-        page_done = all(field in self.saved_fields for field in self.form_gateway.present_fields())
+        page_done = all(field in self.saved_fields for field in self.proxies.present_fields())
         if page_done:
             self._click_and_wait(button_name="Næste")
 
     def _log_str(self, key: str, value):
         valstring = str(value)
-        if self.form_gateway.is_sensitive(key):
+        if self.proxies[key].sensitive:
             valstring = "*"*len(valstring)
         
         s = f"{key} = {valstring}"
@@ -116,21 +95,21 @@ class Session:
     def process_current_page(self, force_reprocess=False):
         """Go over all present fields, write any unwritten data, and update read values"""
         
-        sig = self.form_gateway.signature()
+        sig = self.proxies.signature()
         if sig in self.processed_pages_signatures and not force_reprocess:
             return
         
         logger.info(f"Processing form page with signature {sig}")
         self.processed_pages_signatures.add(sig)
-
-        for key in self.form_gateway.present_fields():
+        
+        for key in self.proxies.present_fields():
             
             needs_write = key not in self.saved_fields and key in self.fill_data
             if needs_write:
                 try:
                     val = self.fill_data[key]
                     
-                    self.form_gateway[key] = val
+                    self.proxies[key].set_value(val)
                     logger.info(f"Filled form element: {self._log_str(key, val)}.")
                 except Exception as e:
                     logger.error(f"{self} failed to fill element: {key} - {e}")
@@ -138,7 +117,7 @@ class Session:
                 self.saved_fields.add(key)
             #
             
-            current_val = self.form_gateway[key]
+            current_val = self.proxies[key].get_value()
             if current_val != self.read_fields.get(key):
                 self.read_fields[key] = current_val
                 logger.info(f"Read form element: {self._log_str(key, current_val)}.")
@@ -173,7 +152,7 @@ class Session:
 
 if __name__ == '__main__':
     HEADLESS = False
-    DEBUG_LEVEL = logging.INFO
+    DEBUG_LEVEL = logging.DEBUG
     
     from pillepas.automation.actions import vals
     import logging
