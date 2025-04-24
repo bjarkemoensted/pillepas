@@ -152,7 +152,7 @@ class Session:
 
 if __name__ == '__main__':
     HEADLESS = False
-    DEBUG_LEVEL = logging.INFO
+    DEBUG_LEVEL = logging.DEBUG
     
     from pillepas.automation.actions import vals
     import logging

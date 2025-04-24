@@ -101,30 +101,12 @@ class DropDownProxy(Proxy):
 
 
 class RadioButtonProxy(Proxy):
-    
-    def __init__(self, label: str):
-        self.label = label
-        super().__init__(finder=self._finder)  # TODO clumsy. Should init with base element and expose the relevant elem as property!!!
-    
-    def _finder(self, element: Locator):
-        label = element.locator('label', has_text=self.label)
-        if label.count() == 0:
-            return
-        
-        id_ = label.get_attribute('for')
-        top_elem = element.locator(f'[id="{id_}"]')
-        #radio_group = label.locator('..').locator('..').get_by_role('radiogroup')
-        return top_elem
-    
-    def set_value(self, element, value):
-        # locate label: e.locator('label', has_text=value).count()
-        e = self._finder(element)
-        target_button = e.locator(f'button[value={value}]')
+    def set_value(self, value):
+        target_button = self.e.locator(f'button[value={value}]')
         target_button.click()
         
-    def get_value(self, element):
-        e = self.finder(element)
-        selected = e.locator('[role="radio"][aria-checked="true"]')
+    def get_value(self):
+        selected = self.e.locator('[role="radio"][aria-checked="true"]')
         val = selected.get_attribute('value')
         return val
 
@@ -173,7 +155,7 @@ vals = dict(
 def proxy_factory(elem: Page|Locator) -> Generator[Tuple[str, Proxy], None, None]:
     page = elem.page
     dr_css = ':scope[name*="doctor"]'
-    nodr_css = ':not(:scope[name*="doctor"])'
+    nodr_css = ':scope:not([name*="doctor"])'
 
     d = dict(
         medicine = (AutocompleteProxy, page.get_by_role("combobox").filter(has=page.locator(':scope[name*="drug"]'))),
@@ -194,7 +176,7 @@ def proxy_factory(elem: Page|Locator) -> Generator[Tuple[str, Proxy], None, None
         # TODO click the autocomplete thingy!!!
         user_address = (Proxy, elem.locator("input[name*='address']").filter(has=page.locator(nodr_css))),
         user_zipcode = (Proxy, elem.get_by_role("textbox", name="Postnummer").filter(has=page.locator(nodr_css))),
-        user_city = (Proxy, elem.get_by_role("textbox", name="By").filter(has=page.locator(nodr_css))),
+        user_city = (Proxy, elem.get_by_role("textbox", name="By", exact=True).filter(has=page.locator(nodr_css))),
         user_passport_number = (Proxy, elem.get_by_role("textbox", name="Pasnummer").filter(has=page.locator(nodr_css))),
         user_birthdate = (Proxy, elem.get_by_role("textbox", name="Indtast din fødselsdato (DD-").filter(has=page.locator(nodr_css))),
         user_birth_city = (Proxy, elem.get_by_role("textbox", name="Fødeby").filter(has=page.locator(nodr_css))),
@@ -204,11 +186,11 @@ def proxy_factory(elem: Page|Locator) -> Generator[Tuple[str, Proxy], None, None
 
 
 
-        #user_gender = RadioButtonProxy(label="Køn"),
+
+        user_gender = (RadioButtonProxy, elem.locator('label', has_text="Køn").locator("..").locator("..")),
         pharmacy_name = (Proxy, elem.locator("input[placeholder='Indtast apotekets navn']"))
 
-        # user_first_name = ProxyFactory(Proxy, role="textbox", name="Fornavn", css=':not([name*="doctor"])'),
-        # user_last_name=ProxyFactory(Proxy, role="textbox", name="Efternavn", css=':not([name*="doctor"])'),
+        
         
         # TODO click the autocomplete thingy!!!
         #user_address=Proxy(finder=lambda e: e.locator("input[name*='address']"), filter_= lambda e: not _doc(e)),
@@ -246,10 +228,13 @@ class Proxies(dict[str, Proxy]):
     def present_fields(self):
         for key, proxy in self.items():
             if proxy.is_present():
-                logger.debug(f"{self} detected {key} is present")
+                logger.debug(f"{repr(self)} detected {key} is present")
                 yield key
             #
         #
+    
+    def __repr__(self):
+        return self.__class__.__name__
     
     def signature(self) -> int:
         """Returns a distinct integer which depends on the combination of fields that are currently visible.
