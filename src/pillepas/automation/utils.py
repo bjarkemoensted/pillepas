@@ -20,9 +20,9 @@ class WaitForChange:
     # After de-indenting, the next page should be ready
     """
     
-    def __init__(self, page: Page, locator: Locator):
-        self.page = page
+    def __init__(self, locator: Locator):
         self.locator = locator
+        self.page = self.locator.page
         self.innerHTML = None
     
     def __enter__(self):

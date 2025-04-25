@@ -2,9 +2,10 @@ import datetime
 import logging
 logger = logging.getLogger(__name__)
 from playwright.sync_api import Locator, Page
-from typing import Callable, Dict, Type, Generator, Tuple
+from typing import Any, final, Generator, Tuple
 import time
 
+from pillepas.automation.utils import WaitForChange
 
 # add more medzz
 # page.get_by_role("button", name="Tilføj mere medicin").click()
@@ -51,15 +52,24 @@ class Proxy:
     def __str__(self):
         return repr(self)
     
-    def set_value(self, value: str):
-        logger.debug(f"{self} is setting value: {'*'*len(str(value)) if self.sensitive else value}")
+    def _set(self, value: str):
         self.e.click(force=True)
         self.e.fill(value)
+    
+    def _get(self):
+        res = self.e.get_attribute("value")
+        return res
+
+    @final
+    def set_value(self, value: Any):
+        logger.debug(f"{self} is setting value: {'*'*len(str(value)) if self.sensitive else value}")
+        self._set(value=value)
         self.e.dispatch_event('change')
         
-    def get_value(self):
+    @final
+    def get_value(self) -> Any:
         logger.debug(f"{self} is getting value.")
-        res = self.e.get_attribute("value")
+        res = self._get()
         return res
     
     def is_present(self):
@@ -68,19 +78,26 @@ class Proxy:
 
 
 class AutocompleteProxy(Proxy):
-    def set_value(self, value: str):
+    def _set(self, value: str):
         self.e.click()
         top = self.e.locator("..").locator("..")
-        target = top.get_by_role("option", name=value)
+        target = top.get_by_role("option", name=value, exact=True)
         
-        for char in value:
-            if char.isalnum():
+        for i, char in enumerate(value):
+            
+            if i < 3:
                 self.e.press(char, delay=50)
-            else:
+                continue
+            
+            with WaitForChange(top.get_by_label("Suggestions")):
+                self.e.press(char, delay=50)
+
+            top.get_by_role("option").first.wait_for(state="visible", timeout=3000)
+            #top.get_by_label("Suggestions").first.wait_for(state="visible", timeout=3000)
+            
+
+            if target.count() > 0:
                 break
-        
-        # TODO wait for suggestion list to appear instead!!!
-        time.sleep(1.0)
         
         if target.count() == 1:
             target.click()
@@ -91,7 +108,7 @@ class AutocompleteProxy(Proxy):
 
 
 class DropDownProxy(Proxy):
-    def set_value(self, value: str):
+    def _set(self, value: str):
         select_elem = self.e.locator("..").locator("select").element_handle()
         
         self.e.click(force=True)
@@ -102,76 +119,79 @@ class DropDownProxy(Proxy):
 
 
 class RadioButtonProxy(Proxy):
-    def set_value(self, value):
+    def _set(self, value):
         target_button = self.e.locator(f'button[value={value}]')
         target_button.click()
         
-    def get_value(self):
+    def _get(self):
         selected = self.e.locator('[role="radio"][aria-checked="true"]')
         val = selected.get_attribute('value')
         return val
     #
 
 
-class DateSelectorGateway(Proxy):
+class DateSelectorProxy(Proxy):
     months = (
-            'januar', 'februar', 'marts', 'april', 'maj', 'juni',
-            'juli', 'august', 'september', 'oktober', 'november', 'december')
+        'januar', 'februar', 'marts', 'april', 'maj', 'juni',
+        'juli', 'august', 'september', 'oktober', 'november', 'december'
+    )
     
-    def _month_as_string(self, date: datetime.date):
-        """Get the Danish name of the month in the input date"""
-        
-        
-        
+    def _month_label_from_date(self, date: datetime.date) -> str:
+        """Creates a label like 'april 2025', for locating the correct pane from which to select a date"""
         ind = date.month - 1  # date.month's start at 1, so subtract 1 to get the index
-        res = self.months[ind]
-        return res
-    
-    def _month_label_from_date(self, date: datetime.date):
-        month_str = self._month_as_string(date=date)
+        month_str = self.months[ind]
         res = f"{month_str} {date.strftime("%Y")}"
         return res
     
     @property
     def dialog(self):
+        """Locates the dialog box for picking dates"""
         today = datetime.date.today()
         target = self._month_label_from_date(today)
         res = self.e.page.get_by_role('dialog').filter(has_text=target)
         return res
     
     def scroll_to_date(self, date: datetime.date):
+        """Scrolls the dialog box forward until the specified month label (e.g. 'april 2025') appears,
+        then locates the input date, and clicks it."""
+
         dia = self.dialog
         target = self._month_label_from_date(date)
-        _max = 12
-        month_str = self._month_as_string(date)
+        _max = 12  # Something's probably wrong if we need to scroll this long
+        pane = dia.get_by_label(target)
+
+        # Keep scrolling until the pana appears
         for _ in range(_max):
-            pane = dia.get_by_label(month_str)
             if pane.count() > 0:
                 break
-            # TODO TEST THE BELOW FEW LINES
             dia.get_by_role("button", name="Go to next month").click()
         
-        dia.get_by_label("april").get_by_role("gridcell", name="25").click()
-            
-        
+        # Locate date and click it
+        date_cell = pane.get_by_role("gridcell", name=str(date.day), exact=True)
+        date_cell.click()
     
-    def set_value(self, value: Tuple[datetime.date]):
+    def _set(self, value: Tuple[datetime.date]):
         self.e.click()
         
-        date1, date2 = value
+        for date in value:
+            self.scroll_to_date(date)
         
-        self.scroll_to_date(date1)
-        
+        self.dialog.get_by_role("button", name="Gem datoer").click()
+    
+    def _get(self):
+        """The dates are represented with abreviated names like '25. apr. 2025', so we need to parse that back into
+        a date."""
+        s = self.e.inner_text()
+        res = []
+        for part in s.strip().split(" - "):
+            date_s, month_s, year_s = part.replace(".", "").split()
+            # Take the first month which starts with the abreviation
+            month_ind = next(i for i, m in enumerate(self.months) if m.startswith(month_s))
+            date = datetime.date(int(year_s), month_ind+1, int(date_s))
+            res.append(date)
 
-# page.get_by_role("button", name="Vælg dato for udrejse og").click()
-# page.get_by_label("april").get_by_role("gridcell", name="25").click()
-# page.get_by_role("button", name="Go to next month").click()
-# page.get_by_role("button", name="Go to previous month").click()
-# page.get_by_role("button", name="Go to next month").click()
-# page.get_by_label("maj").get_by_role("gridcell", name="9", exact=True).click()
-# page.get_by_role("button", name="Gem datoer").click()
-# return
-
+        return res
+    #
 
 # ['Male', 'Female', 'Unspecified']  # gender vals
 
@@ -188,13 +208,13 @@ gender_stuff = ("Kvinde (F)", "Mand (M)", "Uspecificeret (X)")
 
 
 vals = dict(
-    dates = (datetime.date(2025,4,25), datetime.date(2025,4,28)),
+    dates = (datetime.date(2025,4,25), datetime.date(2025,5,2)),
     medicine = "Elvanse, kapsler, hårde, 20 mg 'Takeda Pharma'",
     daily_dosis = "1",
     n_days_with_meds = "Alle dage",
     doctor_first_name = "meh",
     doctor_last_name = "meh",
-    doctor_address = "Amerikavej 15C, 1",
+    doctor_address = "Amerikavej 15C, 1756 København V",
     doctor_zipcode = "2200",
     doctor_city = "Kbh",
     doctor_phone="123213123",
@@ -210,11 +230,9 @@ vals = dict(
     user_email="bjarkemoensted@gmail.com",
     user_phone_number="22578098",
     user_gender = "Male",
-    pharmacy_name="hamlets"
+    pharmacy_address="København Hamlets Apotek, København N, 2200"
 )
 
-
-# medication.0.doctorInformation.address
 
 def proxy_factory(elem: Page|Locator) -> Generator[Tuple[str, Proxy], None, None]:
     page = elem.page
@@ -222,7 +240,9 @@ def proxy_factory(elem: Page|Locator) -> Generator[Tuple[str, Proxy], None, None
     nodr_css = ':scope:not([name*="doctor"])'
 
     d = dict(
-        dates = (DateSelectorGateway, elem.get_by_role("button", name="Vælg dato for udrejse")),
+        
+        dates = (DateSelectorProxy, elem.locator("button[id='date']")),
+        #dates = (DateSelectorGateway, elem.get_by_role("button", name="Vælg dato for udrejse")),
         medicine = (AutocompleteProxy, page.get_by_role("combobox").filter(has=page.locator(':scope[name*="drug"]'))),
         daily_dosis = (Proxy, elem.get_by_role("spinbutton", name="Daglig dosis i antal enheder")),
         n_days_with_meds = (DropDownProxy, elem.get_by_role("combobox", name="Antal dage med medicin")),
@@ -239,7 +259,7 @@ def proxy_factory(elem: Page|Locator) -> Generator[Tuple[str, Proxy], None, None
         user_last_name = (Proxy, elem.get_by_role("textbox", name="Efternavn").filter(has=page.locator(nodr_css))),
 
         # TODO click the autocomplete thingy!!!
-        user_address = (Proxy, elem.locator("input[name*='address']").filter(has=page.locator(nodr_css))),
+        user_address = (AutocompleteProxy, elem.locator("input[name*='address']").filter(has=page.locator(nodr_css))),
         user_zipcode = (Proxy, elem.get_by_role("textbox", name="Postnummer").filter(has=page.locator(nodr_css))),
         user_city = (Proxy, elem.get_by_role("textbox", name="By", exact=True).filter(has=page.locator(nodr_css))),
         user_passport_number = (Proxy, elem.get_by_role("textbox", name="Pasnummer").filter(has=page.locator(nodr_css))),
@@ -253,7 +273,7 @@ def proxy_factory(elem: Page|Locator) -> Generator[Tuple[str, Proxy], None, None
 
 
         user_gender = (RadioButtonProxy, elem.locator('label', has_text="Køn").locator("..").locator("..")),
-        pharmacy_name = (Proxy, elem.locator("input[placeholder='Indtast apotekets navn']"))
+        pharmacy_address = (Proxy, elem.locator("input[placeholder='Indtast apotekets navn']"))
 
         
         

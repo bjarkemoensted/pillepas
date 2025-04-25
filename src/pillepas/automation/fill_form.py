@@ -75,7 +75,7 @@ class Session:
         #self.page.on("framenavigated", lambda: print("omgomg"))
 
     def _click_and_wait(self, button_name: str):
-        with WaitForChange(self.page, self.form):
+        with WaitForChange(self.form):
             self.form.get_by_role("button", name=button_name).click()
         #
 
