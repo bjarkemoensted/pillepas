@@ -169,7 +169,7 @@ if __name__ == '__main__':
     
     sess = Session(vals, auto_click_next=True, headless=HEADLESS)
     sess.start()
-    DATESTUFF(sess.page)
+    #DATESTUFF(sess.page)
     
     now = time.time()
     

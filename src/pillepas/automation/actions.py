@@ -1,3 +1,4 @@
+import datetime
 import logging
 logger = logging.getLogger(__name__)
 from playwright.sync_api import Locator, Page
@@ -109,6 +110,68 @@ class RadioButtonProxy(Proxy):
         selected = self.e.locator('[role="radio"][aria-checked="true"]')
         val = selected.get_attribute('value')
         return val
+    #
+
+
+class DateSelectorGateway(Proxy):
+    months = (
+            'januar', 'februar', 'marts', 'april', 'maj', 'juni',
+            'juli', 'august', 'september', 'oktober', 'november', 'december')
+    
+    def _month_as_string(self, date: datetime.date):
+        """Get the Danish name of the month in the input date"""
+        
+        
+        
+        ind = date.month - 1  # date.month's start at 1, so subtract 1 to get the index
+        res = self.months[ind]
+        return res
+    
+    def _month_label_from_date(self, date: datetime.date):
+        month_str = self._month_as_string(date=date)
+        res = f"{month_str} {date.strftime("%Y")}"
+        return res
+    
+    @property
+    def dialog(self):
+        today = datetime.date.today()
+        target = self._month_label_from_date(today)
+        res = self.e.page.get_by_role('dialog').filter(has_text=target)
+        return res
+    
+    def scroll_to_date(self, date: datetime.date):
+        dia = self.dialog
+        target = self._month_label_from_date(date)
+        _max = 12
+        month_str = self._month_as_string(date)
+        for _ in range(_max):
+            pane = dia.get_by_label(month_str)
+            if pane.count() > 0:
+                break
+            # TODO TEST THE BELOW FEW LINES
+            dia.get_by_role("button", name="Go to next month").click()
+        
+        dia.get_by_label("april").get_by_role("gridcell", name="25").click()
+            
+        
+    
+    def set_value(self, value: Tuple[datetime.date]):
+        self.e.click()
+        
+        date1, date2 = value
+        
+        self.scroll_to_date(date1)
+        
+
+# page.get_by_role("button", name="Vælg dato for udrejse og").click()
+# page.get_by_label("april").get_by_role("gridcell", name="25").click()
+# page.get_by_role("button", name="Go to next month").click()
+# page.get_by_role("button", name="Go to previous month").click()
+# page.get_by_role("button", name="Go to next month").click()
+# page.get_by_label("maj").get_by_role("gridcell", name="9", exact=True).click()
+# page.get_by_role("button", name="Gem datoer").click()
+# return
+
 
 # ['Male', 'Female', 'Unspecified']  # gender vals
 
@@ -125,6 +188,7 @@ gender_stuff = ("Kvinde (F)", "Mand (M)", "Uspecificeret (X)")
 
 
 vals = dict(
+    dates = (datetime.date(2025,4,25), datetime.date(2025,4,28)),
     medicine = "Elvanse, kapsler, hårde, 20 mg 'Takeda Pharma'",
     daily_dosis = "1",
     n_days_with_meds = "Alle dage",
@@ -158,6 +222,7 @@ def proxy_factory(elem: Page|Locator) -> Generator[Tuple[str, Proxy], None, None
     nodr_css = ':scope:not([name*="doctor"])'
 
     d = dict(
+        dates = (DateSelectorGateway, elem.get_by_role("button", name="Vælg dato for udrejse")),
         medicine = (AutocompleteProxy, page.get_by_role("combobox").filter(has=page.locator(':scope[name*="drug"]'))),
         daily_dosis = (Proxy, elem.get_by_role("spinbutton", name="Daglig dosis i antal enheder")),
         n_days_with_meds = (DropDownProxy, elem.get_by_role("combobox", name="Antal dage med medicin")),
@@ -253,4 +318,9 @@ class Proxies(dict[str, Proxy]):
 
 
 if __name__ == '__main__':
-    pass
+    from calendar import month_name, different_locale
+    def get_month_name(month_no, locale):
+        with different_locale(locale):
+            return month_name[month_no]
+    
+    print([get_month_name(i+1, 'da_DK.utf8') for i in range(12)])
