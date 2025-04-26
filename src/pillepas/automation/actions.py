@@ -29,6 +29,17 @@ from pillepas.automation.utils import WaitForChange
 # page.get_by_role("option", name="Tagensvej 98, 2200 København N").click()
 
 
+def parse_element(element: Locator):
+    """Helper method for grabbing a bunch of info on a given element, for debugging etc"""
+    attrs = ("id", "value", "name", "class", "type")
+    if element:
+        d = {attr: element.get_attribute(attr) for attr in attrs}
+        d["tag"] = element.evaluate("el => el.tagName")
+        d["text"] = element.inner_text()
+        return d
+    return None
+
+
 class Proxy:
     def __init__(
             self, element: Locator, sensitive=False, key: str=None):
@@ -51,6 +62,9 @@ class Proxy:
     
     def __str__(self):
         return repr(self)
+    
+    def type_(self, s: str):
+        self.e.page.keyboard.type(s, delay=50)
     
     def _set(self, value: str):
         self.e.click(force=True)
@@ -86,11 +100,11 @@ class AutocompleteProxy(Proxy):
         for i, char in enumerate(value):
             
             if i < 3:
-                self.e.press(char, delay=50)
+                self.type_(char)
                 continue
             
             with WaitForChange(top.get_by_label("Suggestions")):
-                self.e.press(char, delay=50)
+                self.type_(char)
 
             top.get_by_role("option").first.wait_for(state="visible", timeout=3000)
             #top.get_by_label("Suggestions").first.wait_for(state="visible", timeout=3000)
@@ -178,17 +192,22 @@ class DateSelectorProxy(Proxy):
         
         self.dialog.get_by_role("button", name="Gem datoer").click()
     
+    def _parse_short_date(self, datestring: str) -> datetime.date:
+        """Parses dates represented with abreviated names like '25. apr. 2025' into a date instance."""
+        
+        date_s, month_s, year_s = datestring.replace(".", "").split()
+        # Take the first month which starts with the abreviation
+        month_ind = next(i for i, m in enumerate(self.months) if m.startswith(month_s))
+        res = datetime.date(int(year_s), month_ind+1, int(date_s))
+        return res
+    
     def _get(self):
         """The dates are represented with abreviated names like '25. apr. 2025', so we need to parse that back into
         a date."""
         s = self.e.inner_text()
-        res = []
-        for part in s.strip().split(" - "):
-            date_s, month_s, year_s = part.replace(".", "").split()
-            # Take the first month which starts with the abreviation
-            month_ind = next(i for i, m in enumerate(self.months) if m.startswith(month_s))
-            date = datetime.date(int(year_s), month_ind+1, int(date_s))
-            res.append(date)
+        
+        parts = s.strip().split(" - ")
+        res = tuple(self._parse_short_date(part) for part in parts)
 
         return res
     #
@@ -203,98 +222,47 @@ class DateSelectorProxy(Proxy):
 # page.get_by_role("radio", name="Mand (M)").click()
 
 
-
+# !!!
 gender_stuff = ("Kvinde (F)", "Mand (M)", "Uspecificeret (X)")
 
 
-vals = dict(
-    dates = (datetime.date(2025,4,25), datetime.date(2025,5,2)),
-    medicine = "Elvanse, kapsler, hårde, 20 mg 'Takeda Pharma'",
-    daily_dosis = "1",
-    n_days_with_meds = "Alle dage",
-    doctor_first_name = "meh",
-    doctor_last_name = "meh",
-    doctor_address = "Amerikavej 15C, 1756 København V",
-    doctor_zipcode = "2200",
-    doctor_city = "Kbh",
-    doctor_phone="123213123",
-    user_first_name="bjarke",
-    user_last_name="monsted",
-    user_address="tagensvej 98",
-    user_zipcode = "2200",
-    user_city = "kbh",
-    user_passport_number="123123123",
-    user_birthdate="22-03-1987",
-    user_birth_city="Hillerod",
-    user_nationality="Dansk",
-    user_email="bjarkemoensted@gmail.com",
-    user_phone_number="22578098",
-    user_gender = "Male",
-    pharmacy_address="København Hamlets Apotek, København N, 2200"
-)
 
 
-def proxy_factory(elem: Page|Locator) -> Generator[Tuple[str, Proxy], None, None]:
+
+def make_proxies(elem: Page|Locator) -> dict:
     page = elem.page
     dr_css = ':scope[name*="doctor"]'
     nodr_css = ':scope:not([name*="doctor"])'
 
     d = dict(
-        
-        dates = (DateSelectorProxy, elem.locator("button[id='date']")),
-        #dates = (DateSelectorGateway, elem.get_by_role("button", name="Vælg dato for udrejse")),
-        medicine = (AutocompleteProxy, page.get_by_role("combobox").filter(has=page.locator(':scope[name*="drug"]'))),
-        daily_dosis = (Proxy, elem.get_by_role("spinbutton", name="Daglig dosis i antal enheder")),
-        n_days_with_meds = (DropDownProxy, elem.get_by_role("combobox", name="Antal dage med medicin")),
-        doctor_first_name = (Proxy, elem.get_by_role("textbox", name="Fornavn").filter(has=page.locator(dr_css))),
-        doctor_last_name = (Proxy, elem.get_by_role("textbox", name="Efternavn").filter(has=page.locator(dr_css))),
+        dates=DateSelectorProxy(elem.locator("button[id='date']")),
+        medicine=AutocompleteProxy(page.get_by_role("combobox").filter(has=page.locator(':scope[name*="drug"]'))),
+        daily_dosis=Proxy(elem.get_by_role("spinbutton", name="Daglig dosis i antal enheder")),
+        n_days_with_meds=DropDownProxy(elem.get_by_role("combobox", name="Antal dage med medicin")),
 
-        
-        doctor_address = (AutocompleteProxy, elem.locator('input[name*="address"]').filter(has=page.locator(dr_css))),
-        doctor_zipcode = (Proxy, elem.get_by_role("textbox", name="Postnummer").filter(has=page.locator(dr_css))),
-        doctor_city = (Proxy, elem.get_by_role("textbox", name="By").filter(has=page.locator(dr_css))),
-        doctor_phone = (Proxy, elem.get_by_role("textbox", name="telefon").filter(has=page.locator(dr_css))),
+        doctor_first_name=Proxy(elem.get_by_role("textbox", name="Fornavn").filter(has=page.locator(dr_css))),
+        doctor_last_name=Proxy(elem.get_by_role("textbox", name="Efternavn").filter(has=page.locator(dr_css))),
+        doctor_address=Proxy(elem.locator('input[name*="address"]').filter(has=page.locator(dr_css))),
+        doctor_zipcode=Proxy(elem.get_by_role("textbox", name="Postnummer").filter(has=page.locator(dr_css))),
+        doctor_city=Proxy(elem.get_by_role("textbox", name="By").filter(has=page.locator(dr_css))),
+        doctor_phone=Proxy(elem.get_by_role("textbox", name="telefon").filter(has=page.locator(dr_css))),
 
-        user_first_name = (Proxy, elem.get_by_role("textbox", name="Fornavn").filter(has=page.locator(nodr_css))),
-        user_last_name = (Proxy, elem.get_by_role("textbox", name="Efternavn").filter(has=page.locator(nodr_css))),
-
-        # TODO click the autocomplete thingy!!!
-        user_address = (AutocompleteProxy, elem.locator("input[name*='address']").filter(has=page.locator(nodr_css))),
-        user_zipcode = (Proxy, elem.get_by_role("textbox", name="Postnummer").filter(has=page.locator(nodr_css))),
-        user_city = (Proxy, elem.get_by_role("textbox", name="By", exact=True).filter(has=page.locator(nodr_css))),
-        user_passport_number = (Proxy, elem.get_by_role("textbox", name="Pasnummer").filter(has=page.locator(nodr_css))),
-        user_birthdate = (Proxy, elem.get_by_role("textbox", name="Indtast din fødselsdato (DD-").filter(has=page.locator(nodr_css))),
-        user_birth_city = (Proxy, elem.get_by_role("textbox", name="Fødeby").filter(has=page.locator(nodr_css))),
-        user_nationality = (Proxy, elem.get_by_role("textbox", name="Nationalitet").filter(has=page.locator(nodr_css))),
-        user_email = (Proxy, elem.get_by_role("textbox", name="E-mail").filter(has=page.locator(nodr_css))),
-        user_phone_number = (Proxy, elem.get_by_role("textbox", name="Telefonnummer").filter(has=page.locator(nodr_css))),
-
-
-
-
-        user_gender = (RadioButtonProxy, elem.locator('label', has_text="Køn").locator("..").locator("..")),
-        pharmacy_address = (Proxy, elem.locator("input[placeholder='Indtast apotekets navn']"))
-
-        
-        
-        # TODO click the autocomplete thingy!!!
-        #user_address=Proxy(finder=lambda e: e.locator("input[name*='address']"), filter_= lambda e: not _doc(e)),
-        #user_zipcode = Proxy("textbox", name="Postnummer", filter_= _nodoc),
-        #user_city = Proxy("textbox", name="By", exact=True, filter_= _nodoc),
-        #user_passport_number = Proxy("textbox", name="Pasnummer"),
-        #user_birthdate = Proxy("textbox", name="Indtast din fødselsdato (DD-"),
-        #user_birth_city = Proxy("textbox", name="Fødeby"),
-        #user_nationality = Proxy("textbox", name="Nationalitet"),
-        #user_email = Proxy("textbox", name="E-mail"),
-        #user_phone_number = Proxy("textbox", name="Telefonnummer", filter_= _nodoc),
-        #user_gender = RadioButtonProxy(label="Køn")
-        #pharmacy_name=Proxy("placeholder", value="Indtast apotekets navn")
+        user_first_name=Proxy(elem.get_by_role("textbox", name="Fornavn").filter(has=page.locator(nodr_css))),
+        user_last_name=Proxy(elem.get_by_role("textbox", name="Efternavn").filter(has=page.locator(nodr_css))),
+        user_address=Proxy(elem.locator("input[name*='address']").filter(has=page.locator(nodr_css))),
+        user_zipcode=Proxy(elem.get_by_role("textbox", name="Postnummer").filter(has=page.locator(nodr_css))),
+        user_city=Proxy(elem.get_by_role("textbox", name="By", exact=True).filter(has=page.locator(nodr_css))),
+        user_passport_number=Proxy(elem.get_by_role("textbox", name="Pasnummer").filter(has=page.locator(nodr_css)), sensitive=True),
+        user_birthdate=Proxy(elem.get_by_role("textbox", name="Indtast din fødselsdato (DD-").filter(has=page.locator(nodr_css))),
+        user_birth_city=Proxy(elem.get_by_role("textbox", name="Fødeby").filter(has=page.locator(nodr_css))),
+        user_nationality=Proxy(elem.get_by_role("textbox", name="Nationalitet").filter(has=page.locator(nodr_css))),
+        user_email=Proxy(elem.get_by_role("textbox", name="E-mail").filter(has=page.locator(nodr_css))),
+        user_phone_number=Proxy(elem.get_by_role("textbox", name="Telefonnummer").filter(has=page.locator(nodr_css))),
+        user_gender=RadioButtonProxy(elem.locator('label', has_text="Køn").locator("..").locator("..")),
+        pharmacy_address=AutocompleteProxy(elem.locator("input[placeholder='Indtast apotekets navn']")),
     )
-
-    for key, (cls, elem) in d.items():
-        proxy = cls(elem, key=key)
-        yield key, proxy
-    #
+    
+    return d
 
 
 class Proxies(dict[str, Proxy]):
@@ -304,8 +272,9 @@ class Proxies(dict[str, Proxy]):
     def __init__(self, element: Locator):
         super().__init__()
         self.element = element
-
-        for key, proxy in proxy_factory(self.element):
+        
+        _proxies = make_proxies(element)
+        for key, proxy in _proxies.items():
             self[key] = proxy
         #
     #
@@ -338,9 +307,4 @@ class Proxies(dict[str, Proxy]):
 
 
 if __name__ == '__main__':
-    from calendar import month_name, different_locale
-    def get_month_name(month_no, locale):
-        with different_locale(locale):
-            return month_name[month_no]
-    
-    print([get_month_name(i+1, 'da_DK.utf8') for i in range(12)])
+    pass
