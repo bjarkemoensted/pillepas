@@ -7,7 +7,7 @@ import threading
 import time
 
 from pillepas.automation.actions import Proxies
-from pillepas.automation.utils import register_button_callback, WaitForChange
+from pillepas.automation.utils import add_wait, WaitForChange
 from pillepas import config
 from pillepas.persistence.data import FIELDS
 
@@ -18,8 +18,11 @@ def on_page_close():
 
 class Session:
     url = config.URL
+    read_counter_var = 'window.pollCounter'
     _callback_name = "pythonCallback"
     next_button_text = "Næste"
+    user_clicked_next_var = "window.__userClickedNext"
+    python_done_reading_var = "window.__pythonDoneReading"
     
     def __init__(self, fill_data: dict, auto_click_next=False, auto_submit=False, headless=False):
         """Creates a session for filling a pillepas form.
@@ -32,6 +35,7 @@ class Session:
         self._lock = threading.RLock()
         self.saved_fields = set([])
         self.read_fields = dict()
+        self.n_reads_executed = 0
         self.auto_click_next = auto_click_next
         self.auto_submit=auto_submit
         self.processed_pages_signatures = set([])  # For figuring out if we already did a page
@@ -49,19 +53,19 @@ class Session:
         self.context = self.browser.new_context(color_scheme="dark")
         self.page = self.context.new_page()
         self.page.goto(self.url)
+        self.page.evaluate(f"{self.read_counter_var} = 0")
+
         self.proxies = Proxies(self.form)
 
         self.page.on("close", on_page_close)
-        self.page.expose_function(self._callback_name, self._navigate_callback)
-    
-    def _navigate_callback(self):
-        logger.debug(f"Navigation callback triggered by thread {threading.current_thread().name} - Lock: {self._lock}")
-        with self._lock:
-            print("!!! OMGOMG INSTANCE METHOD!!!!!")
-            #self.read_fields_on_current_page()
     
     def add_next_button_callback(self):
-        register_button_callback(page=self.page, button_text=self.next_button_text, callback_name=self._callback_name)
+        add_wait(
+            page=self.page,
+            button_text=self.next_button_text,
+            user_clicked_next_varname = self.user_clicked_next_var,
+            python_done_reading_varname = self.python_done_reading_var
+        )
 
     @property
     def form(self) -> Locator:
@@ -70,7 +74,7 @@ class Session:
     
     @property
     def next_button(self) -> Locator:
-        btn = self.form.get_by_role("button", name="Næste")
+        btn = self.form.get_by_role("button", name=self.next_button_text)
         return btn
     
     @property
@@ -102,35 +106,31 @@ class Session:
     def fill_fields_on_current_page(self):
         """Fills out the fields that are present on the current form page."""
         
-        logger.debug(f"Filling fields in thread {threading.current_thread().name}")
-        with self._lock:
-            for key in self.proxies.present_fields():
-                needs_write = key not in self.saved_fields and key in self.fill_data
-                if needs_write:
-                    try:
-                        val = self.fill_data[key]
-                        self.proxies[key].set_value(val)
-                        logstring = self._log_str(key, val)
-                        logger.info(f"Filled form element: {logstring}.")
-                    except Exception as e:
-                        logger.error(f"{self} failed to fill element: {logstring} - {e}")
-                    
-                    self.saved_fields.add(key)
-                #
+        for key in self.proxies.present_fields():
+            needs_write = key not in self.saved_fields and key in self.fill_data
+            if needs_write:
+                try:
+                    val = self.fill_data[key]
+                    self.proxies[key].set_value(val)
+                    logstring = self._log_str(key, val)
+                    logger.info(f"Filled form element: {logstring}.")
+                except Exception as e:
+                    logger.error(f"{self} failed to fill element: {logstring} - {e}")
+                
+                self.saved_fields.add(key)
             #
-    
+        #
+
     def read_fields_on_current_page(self):
         """Reads field data from all fields present on the current form page."""
         
-        logger.debug(f"Reading fields in thread {threading.current_thread().name} - Lock: {self._lock}")
-        with self._lock:
-            for key in self.proxies.present_fields():
-                current_val = self.proxies[key].get_value()
-                # If we read a new value, store it
-                if current_val != self.read_fields.get(key):
-                    self.read_fields[key] = current_val
-                    logger.info(f"Read form element: {self._log_str(key, current_val)}.")
-                #
+        logger.debug(f"Reading all present fields")
+        for key in self.proxies.present_fields():
+            current_val = self.proxies[key].get_value()
+            # If we read a new value, store it
+            if current_val != self.read_fields.get(key):
+                self.read_fields[key] = current_val
+                logger.info(f"Read form element: {self._log_str(key, current_val)}.")
             #
 
     def _current_title(self):
@@ -146,7 +146,6 @@ class Session:
         If the page has already been processed, no action is performed except if
         force_reprocess is True."""
         
-        self.add_next_button_callback()
         
         with self._lock:
             sig = self.proxies.signature()
@@ -154,6 +153,7 @@ class Session:
             return
         
         self.processed_pages_signatures.add(sig)
+        self.add_next_button_callback()
         # Print info on current page
         pageno = len(self.processed_pages_signatures)
         title = self._current_title()
@@ -166,10 +166,24 @@ class Session:
         self.fill_fields_on_current_page()
         self.read_fields_on_current_page()
         
-        # TODO REDO!!!
         page_done = all(field in self.saved_fields for field in self.proxies.present_fields())
-        if self.auto_click_next and page_done > 0:
+        if self.auto_click_next and page_done:
             self.next_page()
+            return
+        else:
+            while self.proxies.signature() == sig:
+                self.read_fields_on_current_page()
+                
+                user_clicked = self.page.evaluate(f"{self.user_clicked_next_var} === true")
+                logger.debug(f"User clicked next? {user_clicked}")
+                if user_clicked:
+                    logger.debug("Pre-navigation read triggered")
+                    self.read_fields_on_current_page()
+                    self.page.evaluate(f"{self.python_done_reading_var} = true")
+                    
+                    #self.page.wait_for_url("*")
+                time.sleep(0.1)
+        
     
     def process_submit_page(self):
         """Processes the final page of the form"""
@@ -230,7 +244,7 @@ if __name__ == '__main__':
         #filename=str(logpath)
     )
     
-    sess = Session(vals, auto_click_next=False, headless=HEADLESS)
+    sess = Session(vals, auto_click_next=True, headless=HEADLESS)
     sess.start()
     
     now = time.time()

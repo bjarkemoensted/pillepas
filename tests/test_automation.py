@@ -35,7 +35,9 @@ class TestFormFill(TestCase):
 
 
 if __name__ == '__main__':
-    tg = TestFormFill()
+    class TestVisible(TestFormFill):
+        headless = True
+    tg = TestVisible()
     tg.setUp()
     res = tg.test_form_read_matches_fill_values()
     tg.tearDown()

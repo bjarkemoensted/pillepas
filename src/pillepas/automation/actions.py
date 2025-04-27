@@ -212,22 +212,6 @@ class DateSelectorProxy(Proxy):
         return res
     #
 
-# ['Male', 'Female', 'Unspecified']  # gender vals
-
-
-# page.get_by_text("Kvinde (F)").click()
-# page.get_by_text("Uspecificeret (X)").click()
-# page.get_by_text("Kvinde (F)").click()
-# page.get_by_role("radio", name="Uspecificeret (X)").click()
-# page.get_by_role("radio", name="Mand (M)").click()
-
-
-# !!!
-gender_stuff = ("Kvinde (F)", "Mand (M)", "Uspecificeret (X)")
-
-
-
-
 
 def make_proxies(elem: Page|Locator) -> dict:
     page = elem.page

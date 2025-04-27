@@ -44,43 +44,44 @@ class WaitForChange:
     #
 
 
-def register_button_callback(page: Page, button_text: str, callback_name: str):
-    """Add a python callback method in a button's event listener.
-    page: The playwright Page instance to add the callback on.
-    button_text: The text used to find the button to add a callback to.
-    callback_name: The name of the function on the window object, i.e. the name
-    Playwright is exposing the callback as in Javascript.
-    For example, if exposing with
-        page.expose_function("pythonCallback", some_function)
-    then 'pythonCallback' is the callback_name.
-    
+def add_wait(page: Page, button_text: str, user_clicked_next_varname: str, python_done_reading_varname: str):
+    """Injects an event listener which delays an event until 'variable_name' has incremented.
+    This is useful for delaying navigating away from a form page until any newly entered
+    information has been read by python.
+    The python method which reads the data must then increment the variable and be run
+    repeatedly until the next button is clicked.
     The generated javascript checks if the callback has already been attached,
     so calling it multiple times should cause issues."""
     
     js = f"""
-        const btn = Array.from(document.querySelectorAll('button')).find(
+        const button = Array.from(document.querySelectorAll('button')).find(
             el => el.textContent.trim() === '{button_text}'
         );
-        if (btn && !btn._pythonCallbackAttached) {{
-            let clickedOnce = false;
+        
+        {user_clicked_next_varname} = false;
+        {python_done_reading_varname} = false;
+        
 
-            btn.addEventListener('click', async (e) => {{
-                if (clickedOnce) return; // don't intercept again
+        if (button) {{
+            const originalClick = button.click.bind(button);
+            
+            let interval = setInterval(function() {{
+                if ({python_done_reading_varname} === true) {{
+                    clearInterval(interval);  // Stop polling
+                    {user_clicked_next_varname} = false;
+                    {python_done_reading_varname} = false;
+                    
+                    originalClick();
+                }}
+            }}, 100);  // Check every 100ms
 
-                e.stopImmediatePropagation();
-                e.preventDefault(); // block original action temporarily
-
-                await window.{callback_name}();
-                clickedOnce = true;
-
-                // Let the normal JS click logic fire
-                btn.dispatchEvent(new MouseEvent('click', {{ bubbles: true, cancelable: true }}));
-            }}, true);
-
-            btn._pythonCallbackAttached = true;
+            button.addEventListener('click', function(event) {{
+                event.preventDefault();
+                {user_clicked_next_varname} = true;
+            }}, {{ once: true }});
         }}
     """
-    
+
     page.evaluate(js)
 
 
