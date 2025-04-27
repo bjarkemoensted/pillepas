@@ -3,7 +3,6 @@ logger = logging.getLogger(__name__)
 
 from playwright.sync_api import Browser, Locator, Page, Playwright, sync_playwright
 from playwright._impl._errors import TargetClosedError
-import threading
 import time
 
 from pillepas.automation.actions import FormGateway
@@ -19,7 +18,9 @@ def on_page_close():
 class Session:
     url = config.URL
     next_button_text = "Næste"
+    # javascript variable for indicating whether the 'next' button has been clicked 
     user_clicked_next_var = "window.__userClickedNext"
+    # javascript variable for indicating whther python has completed reading
     python_done_reading_var = "window.__pythonDoneReading"
     
     def __init__(self, fill_data: dict, auto_click_next=False, auto_submit=False, headless=False):
@@ -30,7 +31,6 @@ class Session:
         headless (bool, default True) - whether to run Playwright in headless mode"""
 
         self.fill_data = fill_data
-        self._lock = threading.RLock()
         self.saved_fields = set([])
         self.read_fields = dict()
         self.n_reads_executed = 0
@@ -152,9 +152,7 @@ class Session:
         If the page has already been processed, no action is performed except if
         force_reprocess is True."""
         
-        
-        with self._lock:
-            sig = self.proxies.signature()
+        sig = self.proxies.signature()
         if sig in self.processed_pages_signatures and not force_reprocess:
             return
         
