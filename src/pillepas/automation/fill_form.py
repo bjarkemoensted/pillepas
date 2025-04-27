@@ -6,7 +6,7 @@ from playwright._impl._errors import TargetClosedError
 import threading
 import time
 
-from pillepas.automation.actions import Proxies
+from pillepas.automation.actions import FormGateway
 from pillepas.automation.utils import add_wait, WaitForChange
 from pillepas import config
 from pillepas.persistence.data import FIELDS
@@ -18,8 +18,6 @@ def on_page_close():
 
 class Session:
     url = config.URL
-    read_counter_var = 'window.pollCounter'
-    _callback_name = "pythonCallback"
     next_button_text = "Næste"
     user_clicked_next_var = "window.__userClickedNext"
     python_done_reading_var = "window.__pythonDoneReading"
@@ -45,7 +43,7 @@ class Session:
         self.browser: Browser | None = None
         self.context = None
         self.page: Page | None = None
-        self.proxies: Proxies = None
+        self.proxies: FormGateway = None
     
     def start(self):
         self.playwright = sync_playwright().start()
@@ -53,20 +51,11 @@ class Session:
         self.context = self.browser.new_context(color_scheme="dark")
         self.page = self.context.new_page()
         self.page.goto(self.url)
-        self.page.evaluate(f"{self.read_counter_var} = 0")
 
-        self.proxies = Proxies(self.form)
+        self.proxies = FormGateway(self.form)
 
         self.page.on("close", on_page_close)
     
-    def add_next_button_callback(self):
-        add_wait(
-            page=self.page,
-            button_text=self.next_button_text,
-            user_clicked_next_varname = self.user_clicked_next_var,
-            python_done_reading_varname = self.python_done_reading_var
-        )
-
     @property
     def form(self) -> Locator:
         return self.page.locator("form")
@@ -141,6 +130,23 @@ class Session:
         if len(diff) == 1:
             return list(diff)[0]
 
+    def wait_for_user_next(self):
+        add_wait(
+            page=self.page,
+            button_text=self.next_button_text,
+            user_clicked_next_varname = self.user_clicked_next_var,
+            python_done_reading_varname = self.python_done_reading_var
+        )
+        
+        while self.page.evaluate(f"{self.user_clicked_next_var} === true") is False:
+            user_clicked = self.page.evaluate(f"{self.user_clicked_next_var} === true")
+            logger.debug(f"User clicked next? {user_clicked}")
+            time.sleep(0.2)
+        
+        logger.debug("Pre-navigation read triggered")
+        self.read_fields_on_current_page()
+        self.page.evaluate(f"{self.python_done_reading_var} = true")
+
     def process_current_page(self, force_reprocess=False):
         """Go over all present fields, write any unwritten data, and update read values.
         If the page has already been processed, no action is performed except if
@@ -153,7 +159,7 @@ class Session:
             return
         
         self.processed_pages_signatures.add(sig)
-        self.add_next_button_callback()
+        
         # Print info on current page
         pageno = len(self.processed_pages_signatures)
         title = self._current_title()
@@ -171,19 +177,8 @@ class Session:
             self.next_page()
             return
         else:
-            while self.proxies.signature() == sig:
-                self.read_fields_on_current_page()
-                
-                user_clicked = self.page.evaluate(f"{self.user_clicked_next_var} === true")
-                logger.debug(f"User clicked next? {user_clicked}")
-                if user_clicked:
-                    logger.debug("Pre-navigation read triggered")
-                    self.read_fields_on_current_page()
-                    self.page.evaluate(f"{self.python_done_reading_var} = true")
-                    
-                    #self.page.wait_for_url("*")
-                time.sleep(0.1)
-        
+            self.wait_for_user_next()
+            
     
     def process_submit_page(self):
         """Processes the final page of the form"""
@@ -244,7 +239,7 @@ if __name__ == '__main__':
         #filename=str(logpath)
     )
     
-    sess = Session(vals, auto_click_next=True, headless=HEADLESS)
+    sess = Session(vals, auto_click_next=False, headless=HEADLESS)
     sess.start()
     
     now = time.time()
