@@ -5,7 +5,7 @@ from playwright.sync_api import Browser, Locator, Page, Playwright, sync_playwri
 from playwright._impl._errors import TargetClosedError
 import time
 
-from pillepas.automation.actions import FormGateway
+from pillepas.automation.form_gateway import FormGateway
 from pillepas.automation.utils import add_wait, WaitForChange
 from pillepas import config
 from pillepas.persistence.data import FIELDS
@@ -18,24 +18,20 @@ def on_page_close():
 class Session:
     url = config.URL
     next_button_text = "Næste"
-    # javascript variable for indicating whether the 'next' button has been clicked 
+    
+    # javascript variables for signalling page is done from js (user clicks next) and python (reading complete)
     user_clicked_next_var = "window.__userClickedNext"
-    # javascript variable for indicating whther python has completed reading
     python_done_reading_var = "window.__pythonDoneReading"
     
-    def __init__(self, fill_data: dict, auto_click_next=False, auto_submit=False, headless=False):
+    def __init__(self, fill_data: dict, headless=False):
         """Creates a session for filling a pillepas form.
         fill_data (dict) - A dictionary containing form data
-        auto_click_next (bool, default False) - whether to automatically click 'next' when a page is filled
-        auto_submit (bool, default False) - Whether to automatically submit the application after it's been filled
         headless (bool, default True) - whether to run Playwright in headless mode"""
 
         self.fill_data = fill_data
         self.saved_fields = set([])
         self.read_fields = dict()
         self.n_reads_executed = 0
-        self.auto_click_next = auto_click_next
-        self.auto_submit=auto_submit
         self.processed_pages_signatures = set([])  # For figuring out if we already did a page
         
         self.headless = headless
@@ -100,8 +96,8 @@ class Session:
             if needs_write:
                 try:
                     val = self.fill_data[key]
-                    self.proxies[key].set_value(val)
                     logstring = self._log_str(key, val)
+                    self.proxies[key].set_value(val)
                     logger.info(f"Filled form element: {logstring}.")
                 except Exception as e:
                     logger.error(f"{self} failed to fill element: {logstring} - {e}")
@@ -147,7 +143,7 @@ class Session:
         self.read_fields_on_current_page()
         self.page.evaluate(f"{self.python_done_reading_var} = true")
 
-    def process_current_page(self, force_reprocess=False):
+    def process_current_page(self, force_reprocess=False, let_user_click_next=True):
         """Go over all present fields, write any unwritten data, and update read values.
         If the page has already been processed, no action is performed except if
         force_reprocess is True."""
@@ -163,21 +159,15 @@ class Session:
         title = self._current_title()
         logger.info(f"Processing form page {pageno}{f' "{title}"'if title else ''} (signature {sig})")
         
-        if self.is_last_page():
-            self.process_submit_page()
-            return
-        
         self.fill_fields_on_current_page()
-        self.read_fields_on_current_page()
         
         page_done = all(field in self.saved_fields for field in self.proxies.present_fields())
-        if self.auto_click_next and page_done:
+        if page_done and not let_user_click_next:
+            self.read_fields_on_current_page()
             self.next_page()
-            return
         else:
             self.wait_for_user_next()
-            
-    
+        
     def process_submit_page(self):
         """Processes the final page of the form"""
         
@@ -193,9 +183,17 @@ class Session:
         # Check the data usage consent boxes
         data_consent_box.click()
         medicine_card_consent_box.click()
+    
+    def fill(self, auto_click_next: bool=False, auto_submit: bool=False):
+        """auto_submit (bool, default False) - Whether to automatically submit the application after it's been filled"""
+        
+        while not self.is_last_page():
+            self.process_current_page(let_user_click_next=not auto_click_next)
+        
+        self.process_submit_page()
         
         # If auto-submitting, click the final submit button
-        if self.auto_submit:
+        if auto_submit:
             self.submit_button.click()
             
     def is_alive(self) -> bool:
@@ -223,7 +221,7 @@ if __name__ == '__main__':
     vals = make_example_form_values()
 
     HEADLESS = False
-    DEBUG_LEVEL = logging.DEBUG
+    DEBUG_LEVEL = logging.INFO
     
     import logging
     
@@ -237,15 +235,12 @@ if __name__ == '__main__':
         #filename=str(logpath)
     )
     
-    sess = Session(vals, auto_click_next=False, headless=HEADLESS)
+    sess = Session(vals, headless=HEADLESS)
     sess.start()
     
     now = time.time()
     
-    while True:
-        sess.process_current_page()
-        print(int(time.time()))
-        time.sleep(1)
+    sess.fill(auto_click_next=True)
         
         
     #print(logpath.read_text())

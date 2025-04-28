@@ -20,7 +20,7 @@ class FormGateway(dict[str, Proxy]):
     #
     
     def present_fields(self):
-        for key, proxy in self.items():
+        for key, proxy in sorted(self.items(), key=lambda t: t[1].order):
             if proxy.is_present():
                 yield key
             #

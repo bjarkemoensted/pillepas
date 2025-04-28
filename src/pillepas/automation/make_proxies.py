@@ -8,30 +8,9 @@ from pillepas.automation.proxy_classes import (
     AutocompleteProxy,
     DropDownProxy,
     RadioButtonProxy,
-    DateSelectorProxy
+    DateSelectorProxy,
+    MedicineProxy
 )
-
-# add more medzz
-# page.get_by_role("button", name="Tilføj mere medicin").click()
-# page.locator("input[name=\"medication\\.1\\.drug\"]").click()
-# page.locator("input[name=\"medication\\.1\\.drug\"]").fill("elv")
-# page.get_by_role("option", name="Elvanse, kapsler, hårde, 20 mg 'Orifarm'").click()
-# page.locator("button").filter(has_text="Vælg antallet af dage med").click()
-# page.get_by_role("option", name="Alle dage").click()
-# page.locator("input[name=\"medication\\.1\\.dailyDose\"]").click()
-# page.locator("input[name=\"medication\\.1\\.dailyDose\"]").fill("1")
-# page.get_by_role("button", name="Ja").click()
-# page.get_by_role("button", name="Næste").click()
-# page.get_by_role("button", name="Næste").click()
-# page.get_by_role("combobox").filter(has_text="Vælg en læge").click()
-# page.get_by_role("option", name="doktorfirstname doctor").click()
-
-
-# address autocomplete stuff:
-# page.get_by_placeholder("Indtast din adresse").click()
-# page.get_by_placeholder("Indtast din adresse").fill("tagensvej 98")
-# page.get_by_role("option", name="Tagensvej 98, 2200 København N").click()
-
 
 
 def proxy_factory(elem: Page|Locator) -> Generator[Tuple[str, Proxy], None, None]:
@@ -39,20 +18,18 @@ def proxy_factory(elem: Page|Locator) -> Generator[Tuple[str, Proxy], None, None
     dr_css = ':scope[name*="doctor"]'
     nodr_css = ':scope:not([name*="doctor"])'
 
+    medicine_proxies = dict(
+        drug = AutocompleteProxy(page.get_by_role("combobox").filter(has=page.locator(':scope[name*="drug"]'))),
+        daily_dosis = Proxy(elem.get_by_role("spinbutton", name="Daglig dosis i antal enheder")),
+        n_days_with_meds = DropDownProxy(elem.get_by_role("combobox", name="Antal dage med medicin"))
+    )
+
     d = dict(
         dates = (DateSelectorProxy,
             elem.locator("button[id='date']")
         ),
-        medicine = (AutocompleteProxy,
-            page.get_by_role("combobox").filter(has=page.locator(':scope[name*="drug"]'))
-        ),
-        daily_dosis = (Proxy,
-            elem.get_by_role("spinbutton", name="Daglig dosis i antal enheder")
-        ),
-        n_days_with_meds = (DropDownProxy,
-            elem.get_by_role("combobox", name="Antal dage med medicin")
-        ),
-
+        # Defer medicine proxy until last, to make sure doctor info is filled out before
+        medicine = (MedicineProxy, elem, dict(sub_proxies=medicine_proxies, order=float('inf'))),
         doctor_first_name = (Proxy,
             elem.get_by_role("textbox", name="Fornavn").filter(has=page.locator(dr_css))
         ),

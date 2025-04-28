@@ -90,11 +90,22 @@ def make_example_form_values() -> dict:
     travel_start_date = today + datetime.timedelta(days=1)
     travel_end_date = travel_start_date + datetime.timedelta(days=7)
     
+    meds = [
+        dict(
+            drug = "Elvanse, kapsler, hårde, 20 mg 'Takeda Pharma'",
+            daily_dosis = "1",
+            n_days_with_meds = "Alle dage",
+        ),
+        dict(
+            drug = "Elvanse, kapsler, hårde, 40 mg 'Takeda Pharma'",
+            daily_dosis = "1",
+            n_days_with_meds = "Alle dage",
+        )
+    ]
+    
     res = dict(
+        medicine = meds,
         dates = (travel_start_date, travel_end_date),
-        medicine = "Elvanse, kapsler, hårde, 20 mg 'Takeda Pharma'",
-        daily_dosis = "1",
-        n_days_with_meds = "Alle dage",
         doctor_first_name = "meh",
         doctor_last_name = "meh",
         doctor_address = "Amerikavej 15C, 1",

@@ -1,25 +1,33 @@
+from __future__ import annotations
 import datetime
 import logging
 logger = logging.getLogger(__name__)
 from playwright.sync_api import Locator
-from typing import Any, final, Tuple
+from typing import Any, Dict, final, Iterable, Tuple
 
 from pillepas.automation.utils import WaitForChange
 
 
 class Proxy:
     def __init__(
-            self, element: Locator, sensitive=False, key: str=None):
+            self, element: Locator, sensitive=False, key: str=None, order: int|float=0):
         """Proxy for a form element, to harmonize get/set logic. The ideas is to create
         subclasses of this for specific types of inputs (radio buttons, dropdowns, text, etc).
         element: Locator for the topmost element in the form.
         sensitive: Whether the field contains sensitive information (influences whether saved and logged)
-        key: Optional key representing the key used for the proxy (useful for debugging etc)"""
+        key: Optional key representing the key used for the proxy (useful for debugging etc)
+        order: Optional int for specifying an order, e.g. to fill elements with order 1 before order 2."""
         
         self.e = element
         self.sensitive = sensitive
         self.key = key
+        self.order = order
+        # Cache whether element is present, so we can log changes only
         self._present_when_last_checked: bool = None
+    
+    def copy_for_nth_match(self, i: int) -> Proxy:
+        res = self.__class__(element=self.e.nth(i), sensitive=self.sensitive, key=self.key)
+        return res
     
     def __repr__(self):
         s = self.__class__.__name__
@@ -36,11 +44,11 @@ class Proxy:
         self.e.page.keyboard.type(s, delay=50)
     
     def _set(self, value: str):
-        self.e.click(force=True)
-        self.e.fill(value)
+        self.e.first.click(force=True)
+        self.e.first.fill(value)
     
     def _get(self):
-        res = self.e.get_attribute("value")
+        res = self.e.first.get_attribute("value")
         return res
 
     @final
@@ -107,7 +115,10 @@ class DropDownProxy(Proxy):
         self.e.click(force=True)
         select_elem.select_option(label=value)
         select_elem.press("Escape")
-    #
+    
+    def _get(self):
+        res = self.e.first.inner_text()
+        return res
 
 
 class RadioButtonProxy(Proxy):
@@ -192,6 +203,75 @@ class DateSelectorProxy(Proxy):
         res = tuple(self._parse_short_date(part) for part in parts)
 
         return res
+    #
+
+
+class MedicineProxy(Proxy):
+    def __init__(self, element, sub_proxies: Dict[str, Proxy], **kwargs):
+        self._sub_proxies = sub_proxies
+        self.sub_proxies = []
+        self._add_sub_proxies()
+        super().__init__(element, **kwargs)
+    
+    def _add_sub_proxies(self):
+        i = len(self.sub_proxies)
+        new_subs = {k: p.copy_for_nth_match(i) for k, p in self._sub_proxies.items()}
+        self.sub_proxies.append(new_subs)
+    
+    def is_present(self):
+        for proxies in self.sub_proxies:
+            for proxy in proxies.values():
+                if not proxy.is_present():
+                    return False
+                #
+            #
+        return True
+    
+    def get_value(self):
+        res = []
+        for d in self.sub_proxies:
+            val = dict()
+            for k, p in d.items():
+                thisval = p.get_value()
+                val[k] = thisval
+            res.append(val)
+            
+        return res
+    
+    def _reuse_doctor_info(self):
+        page = self.e.page
+        
+        # Click 'yes' to reuse existing doctor information
+        heading = page.get_by_role("heading", name="Information om lægen").nth(-1)
+        info_section = heading.locator("..")
+        info_section.get_by_role("button", name="Ja").click()
+        
+        # Choose the existing doctor info from dropdown
+        dropdown = info_section.get_by_role("combobox").filter(has_text="Vælg en læge")
+        dropdown.click()
+        page.keyboard.press("Enter")
+    
+    def set_value(self, value: Iterable[Dict[str, str]]):
+        # Go over all subproxies and use them to set data
+        
+        for i, d in enumerate(value):
+            proxies = self.sub_proxies[i]
+            if set(d.keys()) != set(proxies.keys()):
+                raise RuntimeError(f"Keys mismatch medicine ({d.keys()}) vs proxies ({self.sub_proxies.keys()})")
+        
+            for key, proxy in proxies.items():
+                val = d[key]
+                proxy.set_value(val)
+            #
+        
+            last = i == len(value) - 1
+            first = i == 0
+            if not first:
+                self._reuse_doctor_info()
+            if not last:
+                self.e.page.get_by_role("button", name="Tilføj mere medicin").click()
+                self._add_sub_proxies()
+        #
     #
 
 
