@@ -106,17 +106,19 @@ def build_menu() -> MenuNode:
         "Settings", parent=main
     ).add(
         LeafNode("Change password", action=g.prompt_password)
-    ).add(
-        LeafNode(
-            "Store sensitive data",
-            action=g.choose_parameter("save_sensitive"),
-        )
-    ).add(
-        LeafNode(
-            "Change data directory",
-            action=g.change_data_dir
-        )
     )
+    # .add(
+    #     LeafNode(
+    #         "Store sensitive data",
+    #         action=g.choose_parameter("save_sensitive"),
+    #     )
+    # )
+    # .add(
+    #     LeafNode(
+    #         "Change data directory",
+    #         action=g.change_data_dir
+    #     )
+    # )
     
     data_menu = MenuNode(
         "Data"

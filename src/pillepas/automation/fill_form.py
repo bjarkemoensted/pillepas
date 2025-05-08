@@ -12,7 +12,7 @@ from pillepas.persistence.data import FIELDS
 
 
 def on_page_close():
-    print("The page has been closed by the user!")
+    print("The page has been closed!")
 
 
 class Session:
@@ -184,6 +184,9 @@ class Session:
         data_consent_box.click()
         medicine_card_consent_box.click()
     
+    def confirm_close(self):
+        input("Done - press any key to close.")
+    
     def fill(self, auto_click_next: bool=False, auto_submit: bool=False):
         """auto_submit (bool, default False) - Whether to automatically submit the application after it's been filled"""
         
@@ -195,6 +198,12 @@ class Session:
         # If auto-submitting, click the final submit button
         if auto_submit:
             self.submit_button.click()
+        else:
+            while self.submit_button.count():
+                time.sleep(.1)
+            #
+        
+        self.confirm_close()
             
     def is_alive(self) -> bool:
         """Whether the session is alive (to avoid things hanging)"""
