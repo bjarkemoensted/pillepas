@@ -58,9 +58,23 @@ def build_menu() -> MenuNode:
         )
     )
     
-    data_menu = MenuNode(
-        "Data"
+    def placeholder():
+        raise NotImplementedError
+
+    data_menu = LeafNode(
+        "TODO edit data",  # !!! delete local data (multi-select). Possibly edit standard ones (address etc)
+        action=placeholder,
+        parent=main
     )
+
+    go = MenuNode(
+        "Fill application", parent=main
+    ).add(
+        LeafNode("TODO Interactive mode", action=placeholder)  # Fill what data we have, have user fill remainder. Read fields and prompt which to keep at the end!!!
+    ).add(
+        LeafNode("TODO speedrun", action=placeholder)  # Prompt for dates and meds (multiselect). Do everything including clicking next
+    )
+
     
     
     return main
