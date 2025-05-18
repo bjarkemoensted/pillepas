@@ -4,6 +4,7 @@ from simple_term_menu import TerminalMenu
 from typing import Callable
 
 from pillepas import config
+from pillepas.utils import path_from_str, path_looks_like_file
 
 
 DEFAULT_MENU_SETTINGS = dict(
@@ -52,7 +53,7 @@ def select_with_menu(options: list|tuple, options_str: list|tuple=None, title: s
         return options[i]
 
 
-def get_input(msg: str=None, validator: Callable[[str], bool]=None, invalid_msg: str=None) -> str|None:
+def get_input(msg: str=None, validator: Callable[[str], bool|None]=None, invalid_msg: str=None) -> str|None:
     """Prompts user for input.
     msg (str, optional) - The message to display when prompting
     validator: Optional callable which returns a boolean indicating whether input is valid. Re-prompts if not.
@@ -75,7 +76,11 @@ def get_input(msg: str=None, validator: Callable[[str], bool]=None, invalid_msg:
     #
 
 
-def _prompt_yes_no(base_prompt: str, default: bool=None):
+def _prompt_yes_no(base_prompt: str, default: bool=None) -> bool|None:
+    """Prompts user to confirm something with yes or no. Returns the corresponding boolean.
+    default indicates the value to default to. If None (default) no default boolean will be used.
+    Returns None if no boolean can be parsed from result."""
+
     tail = "y/n"
     d = {"y": True, "yes": True, "n": False, "no": False}
     if default is not None:
@@ -110,39 +115,43 @@ def prompt_password(prompt: str=None, confirm=False) -> str:
     #
 
 
-def prompt_directory(msg: str=None) -> Path:
+def _validate_dir(s: str):
+    p = path_from_str(s)
+    # Force input without a file extension
+    if path_looks_like_file(p):
+        print("Enter path to a folder, not a file")
+        return False
+    return True
+
+
+def prompt_directory(msg: str=None) -> Path|None:
     """Prompts for a new location for data storage. Asks whether to create if missing."""
     
     if not msg:
         msg = "Enter path: "
 
-    def validator(s):
-        """Validator for data directory"""
         
-        p = config._path_from_str(s)
-        # Force input without a file extension
-        if p.suffixes:
-            print("Enter path to a folder, not a file")
-            return False
-        
-        # If folder already exists, input is good
-        if p.exists():
-            return True
-        
-        # Otherwise, ask if we should create it. Input is good iff yes
+    
+    s = get_input(msg=msg, validator=_validate_dir)
+    if s is None:
+        return s
+    
+    p = path_from_str(s)
+    
+    
+    if not p.exists():
         msg = f"Path {p} does not exist - create it?"
         do_it = _prompt_yes_no(base_prompt=msg, default=True)
-        
+    
         if do_it:
             p.mkdir(parents=False, exist_ok=False)
-        return do_it
+        else:
+            return None
+        #
     
-    res = get_input(msg=msg, validator=validator)
-    if res:
-        res = config._path_from_str(res)
-    
-    return res
+    return p
 
 
 if __name__ == '__main__':
-    prompt_directory()
+    dir_ = prompt_directory()
+    print(dir_)

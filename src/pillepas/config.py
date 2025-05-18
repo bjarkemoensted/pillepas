@@ -16,7 +16,12 @@ URL = "https://app.apoteket.dk/pillepas/borger/bestilling"
 # Path to file containing the data storage location. This is fixed, in the app's config dir
 _config_dir_str = platformdirs.user_config_dir(APPNAME, ensure_exists=True)
 CONFIG_PATH = pathlib.Path(_config_dir_str).resolve() / "data_location.txt"
+
 DATA_FILENAME = "data.stuff"
+
+
+def _default_data_dir():
+    return CONFIG_PATH.parent
 
 
 def _determine_data_dir() -> pathlib.Path:
@@ -26,7 +31,7 @@ def _determine_data_dir() -> pathlib.Path:
         s = CONFIG_PATH.read_text()
         res = path_from_str(s)
     except FileNotFoundError:
-        res = CONFIG_PATH.parent
+        res = _default_data_dir()
     
     return res
 

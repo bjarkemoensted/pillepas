@@ -2,123 +2,61 @@ from __future__ import annotations
 import logging
 
 logger = logging.getLogger(__name__)
-from typing import Iterable
 
-from pillepas.user_inputs import (
-    select_with_menu,
-    prompt_password,
-    prompt_directory
-)
+
+from pillepas.cli import actions, user_inputs
 from pillepas.cli.tree_utils import MenuNode, LeafNode
 from pillepas import config
-from pillepas.crypto import Cryptor, CryptoError
-from pillepas.persistence import data_del
-from pillepas.persistence.gateway import Gateway
+from pillepas.utils import path_to_str
 
 
-class GatewayInterface(Gateway):
-    """Exposes various methods that act on a gateway, some using user inputs."""
-
-    def __init__(self, path: Path, cryptor: Cryptor=None):
-        super().__init__(path=path, cryptor=cryptor)
-        missing_keys = filter(lambda k: k not in self, (field.key for field in data_del.FIELDS))
-        
-        d = {k: None for k in missing_keys}
-        self.set_values(**d)
-        
-    def prompt_password(self):
-        """Prompts user for password, then updates the gateway's password"""
-        password = prompt_password()
-        cryptor = Cryptor(password=password) if password else None
-        self.change_cryptor(cryptor=cryptor)
+class CLISession:
+    def __init__(self):
+        self.gateway = actions.make_gateway()
     
-    def make_menu_single(self, key: str, options: list|tuple, title: str=None, default_value_selected=None):
-        """Uses a terminal menu to select a value from a list of options.
-        The value is then saved to the specified key in the gateway.
-        If the key is already stored in the gateway, the cursor starts at that value.
-        Otherwise, the cursor starts at default_value_selected if specified."""
+    def change_password(self):
+        cryptor = actions.make_cryptor()
+        self.gateway.change_cryptor(cryptor=cryptor)
 
-        if default_value_selected is not None and default_value_selected not in options:
-            raise ValueError(f"Default selection must be among the allowed options")
-        
-        _title = title
-        
-        def prompt_and_set():
-            current = self.get(key)
-            if current is None:
-                current = default_value_selected
-            
-            title = _title
-            if not title:
-                title = f"Select value for {key}"
-            
-            val = select_with_menu(options=options, title=title, current=current)
-            self[key] = val
+    def change_dir(self):
+        current = self.gateway.path.parent
+        current_s = path_to_str(current)
 
-        return prompt_and_set
-    
-    def choose_parameter(self, parameter_name: str, title: str=None):
-        parameter = data_del.FIELDS[parameter_name]
-        return self.make_menu_single(key=parameter.key, options=parameter.valid_values, title=title)
-    
-    def change_data_dir(self):
-        current = config.determine_data_file().parent
-        current_s = config._path_to_str(current)
         msg = f"Enter new folder for storing data (currently using {current_s}): "
-        
-        new_dir = prompt_directory(msg=msg)
+        new_dir = user_inputs.prompt_directory(msg=msg)
+        if not new_dir:
+            logger.debug(f"No new directory provided. Aborting.")
+            return
+
         logger.debug(f"Got new data dir: {new_dir}")
-        config.set_data_dir(new_dir)
-        new_path = config.determine_data_file()
-        logger.debug(f"Updated data dir in config: {new_path}")
-        self.move_data(new_path)
-    #
-
-    @classmethod
-    def create_with_prompt(cls) -> GatewayInterface:
-        path = config.determine_data_file()
-        if not path.exists():
-            password = prompt_password(f"Enter password (leave blank to not encrypt): ", confirm=True)
-            c = Cryptor(password)
-            return cls(path=path, cryptor=c)
-
-        c = Cryptor(password=None)
-        prompt = f"{path} is encrypted - enter password: "
-
-        while True:
-            try:
-                res = cls(path=path, cryptor=c)
-                return res
-            except CryptoError:
-                pass
-
-            password = prompt_password(prompt=prompt)
-            c = Cryptor(password=password)
-            prompt = f"Invalid password, try again: "
-        #
+        actions.change_data_dir(gateway=self.gateway, new_dir=new_dir)
+    
+    def revert_data_dir(self):
+        dir_ = config._default_data_dir()
+        msg = f"Change data directory to default ({dir_})?"
+        if user_inputs._prompt_yes_no(msg, default=True):
+            actions.change_data_dir(gateway=self.gateway, new_dir=dir_)
 
 
 def build_menu() -> MenuNode:
-    g = GatewayInterface.create_with_prompt()
+    sess = CLISession()
     main = MenuNode(name="Main menu")
     
     settings = MenuNode(
         "Settings", parent=main
     ).add(
-        LeafNode("Change password", action=g.prompt_password)
+        LeafNode("Change password", action=sess.change_password)
+    ).add(
+        LeafNode(
+            "Change data directory",
+            action=sess.change_dir
+        )
+    ).add(
+        LeafNode(
+            "Revert to default data storage directory",
+            action=sess.revert_data_dir
+        )
     )
-    # .add(
-    #     LeafNode(
-    #         "Store sensitive data",
-    #         action=g.choose_parameter("save_sensitive"),
-    #     )
-    # )
-    # .add(
-    #     LeafNode(
-    #         "Change data directory",
-    #         action=g.change_data_dir
-    #     )
-    # )
     
     data_menu = MenuNode(
         "Data"
@@ -126,8 +64,6 @@ def build_menu() -> MenuNode:
     
     
     return main
-    
-    
 
 
 if __name__ == '__main__':
@@ -140,11 +76,12 @@ if __name__ == '__main__':
     logpath.unlink(missing_ok=True)
     logging.basicConfig(level=logging.DEBUG, filename=str(logpath))
 
+    
     menu = build_menu()
+    
+
     try:
         menu()
-    except:
-        pass
     finally:
         print(logpath.read_text())
     

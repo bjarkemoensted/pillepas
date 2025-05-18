@@ -93,12 +93,13 @@ class BaseNode(Node, abc.ABC):
     
     def __call__(self):
         """Run the 'action' callable, then fall back to the parent node, if one exists."""
-        
+
         logger.debug(f"{self} called.")
         
         run = True
         while run:
             ret = self.action()
+            
             logger.debug(f"Node {self} got {ret}")
             run = not self.is_leaf
             
@@ -166,13 +167,17 @@ class MenuNode(BaseNode):
         menu = self.make_menu()
         i = menu.show()
         
-        # If no selection (e.f. if user pressed escape), call escape method
+        # If no selection (e.g. if user pressed escape), call escape method
         if i is None:
             return self.escape()
         
         # Call the selected node
         child = self.children[i]
-        return child()
+
+        res = child()
+        logger.debug(f"Node {self} received {res} from child {child}.")
+
+        return res
     
     def make_menu(self) -> TerminalMenu:
         """Creates a menu for choosing a child node.
@@ -197,7 +202,9 @@ class MenuNode(BaseNode):
             menu_entries=entries,
             title=self.title,
             clear_screen=True,
-            cursor_index=cursor_index
+            clear_menu_on_exit=False,
+            cursor_index=cursor_index,
+            raise_error_on_interrupt=True
         )
         
         return self._menu_cached
