@@ -3,6 +3,8 @@ import pathlib
 import platformdirs
 import yaml
 
+from pillepas.utils import path_from_str, path_to_str, path_looks_like_file
+
 _here = pathlib.Path(__file__).parent.resolve()
 
 
@@ -11,69 +13,38 @@ logger = logging.getLogger(APPNAME)
 
 URL = "https://app.apoteket.dk/pillepas/borger/bestilling"
 
-_data_filename = "data.stuff"
+# Path to file containing the data storage location. This is fixed, in the app's config dir
+_config_dir_str = platformdirs.user_config_dir(APPNAME, ensure_exists=True)
+CONFIG_PATH = pathlib.Path(_config_dir_str).resolve() / "data_location.txt"
+DATA_FILENAME = "data.stuff"
 
 
-def _get_config_path() -> pathlib.Path:
-    """Get the path to a config file. This one is fixed"""
-    
-    dir_s = platformdirs.user_config_dir(APPNAME, ensure_exists=True)
-    p = pathlib.Path(dir_s).resolve()
-    
-    return p    
-
-
-CONFIG_PATH = _get_config_path() / "data_location.txt"
-
-
-def determine_data_file() -> pathlib.Path:
+def _determine_data_dir() -> pathlib.Path:
+    """Figures out where data is stored. Tries to read the path from the app's config dir.
+    Reverts to the config dir if no path is stored there."""
     try:
         s = CONFIG_PATH.read_text()
-        res = _path_from_str(s)
+        res = path_from_str(s)
     except FileNotFoundError:
-        res = CONFIG_PATH.parent / _data_filename
+        res = CONFIG_PATH.parent
     
     return res
 
 
-def set_data_file(path: pathlib.Path):
-    oldpath = determine_data_file()
+def get_data_file():
+    dir_ = _determine_data_dir()
+    res = dir_ / DATA_FILENAME
+    return res
+
+
+def set_data_dir(path: pathlib.Path):        
+    if path_looks_like_file(path):
+        raise RuntimeError(f"Path looks like a file ({path}). Must provide path to a directory.")
     
-    if not path.suffixes:
-        path = path / _data_filename
+    path.mkdir(exist_ok=True, parents=True)
     
-    path.parent.mkdir(exist_ok=True, parents=True)
-    
-    if path.exists() and not path.is_file():
-        raise RuntimeError(f"Provide a file path - got {path}")
-    
-    s = _path_to_str(path)
+    s = path_to_str(path)
     CONFIG_PATH.write_text(s)
-    if oldpath.exists():
-        oldpath.rename(path)
-
-
-def _path_to_str(path: pathlib.Path) -> str:
-    """Represent a path as a string. If the path in the home dir, uses "~" to represent home dir."""
-    
-    path = path.expanduser()
-    
-    try:
-        path = (pathlib.Path("~") / path.relative_to(pathlib.Path.home()))
-    except ValueError:
-        pass
-    
-    return str(path)
-
-
-def _path_from_str(s: str) -> pathlib.Path:
-    """Turns string into path"""
-    return pathlib.Path(s).expanduser().resolve()
-
-
-def _read_fields() -> dict:
-    p = _here / 'data' / "fields.yaml"
-    return yaml.safe_load(p.read_text())
 
 
 if __name__ == '__main__':

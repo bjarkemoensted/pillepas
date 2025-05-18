@@ -2,9 +2,8 @@ import json
 from pathlib import Path
 
 from pillepas import config
+from pillepas.utils import path_looks_like_file
 from pillepas.crypto import Cryptor
-from pillepas.user_inputs import prompt_password
-
 
 _passthrough = Cryptor(password=None)
 
@@ -13,21 +12,30 @@ class CorruptedError(Exception):
     pass
 
 
+def get_data_file_path(folder: Path=None) -> Path:
+    if folder is None:
+        folder = config.DATA_DIR
+    res = folder / config.DATA_FILENAME
+    return res
+
+
 class Gateway:
     """Intended to handle reading/writing of data, along with any preprocessing.
     Uses the builtin get/set/del magic methods for items, so stuff like
     my_gateway["foo"] = "bar"
     adds value "bar" at key "foo", then updates the gateway's file."""
     
-    def __init__(self, path: Path, cryptor: Cryptor=None):
-        """path (pathlib.Path) - the path where data are stored
-        cryptor (Cryptor, optional) - Cryptor instance which can handle encrypting+decrypting"""
-            
-        self.path = path
+    def __init__(self, cryptor: Cryptor=None):
+        """cryptor (Cryptor, optional) - Cryptor instance which can handle encrypting+decrypting""" 
+        
+        self.path = config.get_data_file()
         self._cryptor = _passthrough if cryptor is None else cryptor
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._last_hash = None
+        self._data = None
+        self._setup()
         
+    def _setup(self):
         try:
             self._data = self.read()
         except FileNotFoundError:
@@ -52,8 +60,12 @@ class Gateway:
         self._cryptor = cryptor
         self.save()
     
-    def move_data(self, new_path: Path):
-        new_path.parent.mkdir(parents=True, exist_ok=True)
+    def move_data(self, new_folder: Path):
+        if path_looks_like_file(new_folder):
+            raise RuntimeError(f"New path ({new_folder}) looks like a file. Use a folder.")
+        
+        new_folder.mkdir(parents=True, exist_ok=True)
+        new_path = get_data_file_path(folder=new_folder)
         self.path.rename(new_path)
         self.path = new_path
     

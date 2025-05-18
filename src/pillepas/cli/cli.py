@@ -12,7 +12,7 @@ from pillepas.user_inputs import (
 from pillepas.cli.tree_utils import MenuNode, LeafNode
 from pillepas import config
 from pillepas.crypto import Cryptor, CryptoError
-from pillepas.persistence import data
+from pillepas.persistence import data_del
 from pillepas.persistence.gateway import Gateway
 
 
@@ -21,7 +21,7 @@ class GatewayInterface(Gateway):
 
     def __init__(self, path: Path, cryptor: Cryptor=None):
         super().__init__(path=path, cryptor=cryptor)
-        missing_keys = filter(lambda k: k not in self, (field.key for field in data.FIELDS))
+        missing_keys = filter(lambda k: k not in self, (field.key for field in data_del.FIELDS))
         
         d = {k: None for k in missing_keys}
         self.set_values(**d)
@@ -58,7 +58,7 @@ class GatewayInterface(Gateway):
         return prompt_and_set
     
     def choose_parameter(self, parameter_name: str, title: str=None):
-        parameter = data.FIELDS[parameter_name]
+        parameter = data_del.FIELDS[parameter_name]
         return self.make_menu_single(key=parameter.key, options=parameter.valid_values, title=title)
     
     def change_data_dir(self):
@@ -68,7 +68,7 @@ class GatewayInterface(Gateway):
         
         new_dir = prompt_directory(msg=msg)
         logger.debug(f"Got new data dir: {new_dir}")
-        config.set_data_file(new_dir)
+        config.set_data_dir(new_dir)
         new_path = config.determine_data_file()
         logger.debug(f"Updated data dir in config: {new_path}")
         self.move_data(new_path)

@@ -8,7 +8,6 @@ import time
 from pillepas.automation.form_gateway import FormGateway
 from pillepas.automation.utils import add_wait, WaitForChange
 from pillepas import config
-from pillepas.persistence.data import FIELDS
 
 
 def on_page_close():
